@@ -4,6 +4,10 @@
   "private": true,
   "description": "Token-efficient open-source PowerPoint AI assistant and Office add-in.",
   "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.13.0",
+    "pnpm": ">=11.9.0"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",

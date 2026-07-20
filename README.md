@@ -33,7 +33,7 @@ The hosted version supports normal BYOK and compatible HTTPS endpoints. CC Switc
 
 Requirements:
 
-- Node.js 20 or later
+- Node.js 22.13 or later
 - pnpm 11.9.0 or later
 - Microsoft PowerPoint desktop for add-in testing
 
