@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Features
+
+- **Per-message routing and context compaction** — Adapters can use `toolsForMessage`, `buildSystemPromptForMessage`, and `transformContext` to expose only the tools, prompt, and provider-facing history needed for the current request without rewriting persisted session history.
+- **Mutation-aware limit recovery** — `ToolRecoveryInfo` classifies reads, writes, verification coverage, and compact mutation scope. Structured tool results can report `mutationState` as `not_started`, `completed`, or `uncertain`, allowing the runtime to avoid replaying completed writes and require targeted verification for uncertain writes.
+- **Bounded automatic continuation** — The runtime automatically continues a length-limited response up to two times and retries a context-overflow turn after compaction up to two times. If the turn still cannot finish, its session remains usable so the user can narrow the request or send “continue” in the same conversation.
+
 ## [0.0.7] - 2026-05-12
 
 ### Changed

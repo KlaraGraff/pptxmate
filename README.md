@@ -1,108 +1,124 @@
-# Office Agents
+# PPTXMate
 
-Office Agents is a monorepo of Microsoft Office Add-ins with integrated AI chat panels. Each add-in connects to major LLM providers using your own credentials (BYOK) and can read/write documents through built-in tools, a sandboxed shell, and a virtual filesystem.
+PPTXMate is an open-source PowerPoint AI assistant and Office add-in for reading, editing, translating, and automating PPT/PPTX presentations with less model context and fewer unnecessary tokens.
 
-https://github.com/user-attachments/assets/50f3ba42-4daa-49d8-b31e-bae9be6e225b
+PPTXMate 是一个开源 PowerPoint AI 插件，支持按需读取幻灯片、文本修改与翻译、稳定页面定位、图片粘贴和长任务恢复。
 
-## Packages
+> PPTXMate is an independent project. It is not affiliated with or endorsed by Microsoft.
 
-| Package                                              | Description                                                                          |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| [`@office-agents/sdk`](./packages/sdk)               | Headless SDK — agent runtime, tools, storage, VFS, skills, OAuth, web search         |
-| [`@office-agents/core`](./packages/core)             | Chat UI (Svelte 5) — re-exports SDK + chat components, settings, sessions            |
-| [`@office-agents/bridge`](./packages/bridge)         | Local HTTPS/WebSocket RPC bridge + CLI for inspecting a live Office add-in runtime   |
-| [`@office-agents/excel`](./packages/excel)           | Excel Add-in — spreadsheet tools, Office.js wrappers, system prompt                  |
-| [`@office-agents/powerpoint`](./packages/powerpoint) | PowerPoint Add-in — slide/OOXML tools, Office.js wrappers, system prompt             |
-| [`@office-agents/word`](./packages/word)             | Word Add-in — document text/structure/OOXML tools, Office.js wrappers, system prompt |
+## Highlights
 
-See each package's README for install instructions and tool documentation.
+- **Task-aware context routing**: text, layout, creation, and verification requests expose only the prompt, tools, and presentation fields they need.
+- **Layered, bounded reads**: start with a compact slide directory, preview selected slides, and load detailed text, geometry, formatting, or OOXML only on demand.
+- **Stable slide identity**: writes target PowerPoint `slide_id` values rather than stale page numbers after deletion or reordering.
+- **Limit recovery**: bounded outputs, transcript compaction, automatic continuation, mutation receipts, and inspect-before-retry recovery keep the same conversation usable.
+- **Clipboard images**: paste PNG, JPEG, GIF, WebP, or BMP images directly into the chat composer.
+- **BYOK providers**: use API keys, supported OAuth flows, or compatible custom endpoints.
+- **Optional CC Switch integration**: route the local `/v1` endpoint through the account currently selected in CC Switch.
+- **Optional macOS lifecycle watcher**: start the local PPTXMate route when PowerPoint opens and stop it when PowerPoint closes.
 
-## Skills
+PowerPoint implementation details and the complete tool list are documented in [`packages/powerpoint`](./packages/powerpoint).
 
-You can install skills from:
+## Install The Hosted Add-in
 
-- a single `SKILL.md` file, or
-- a folder that contains `SKILL.md`.
+The GitHub Pages workflow publishes the task pane and public manifest at:
 
-Manage skills from the Settings tab.
+[`https://klaragraff.github.io/pptxmate/manifest.prod.xml`](https://klaragraff.github.io/pptxmate/manifest.prod.xml)
 
-## Providers
+Download that manifest and sideload it in PowerPoint. Platform-specific steps are in the [PowerPoint package README](./packages/powerpoint/README.md#install).
 
-- API key (BYOK): OpenAI, Anthropic, Google, Azure, OpenRouter, Groq, xAI, Cerebras, Mistral, etc.
-- OAuth: Anthropic (Claude Pro/Max), OpenAI Codex (ChatGPT Plus/Pro)
-- Custom endpoint: OpenAI-compatible APIs (Ollama, vLLM, LMStudio, ...)
+The hosted version supports normal BYOK and compatible HTTPS endpoints. CC Switch uses a localhost route and therefore requires the local mode below.
 
-## Configuration
+## Local Development
 
-In **Settings** you can configure:
+Requirements:
 
-- Provider, model, and auth method
-- CORS proxy
-- Thinking level
-- Skills
-- Web search/fetch providers and API keys
-
-### Web search/fetch credentials
-
-Configure web provider credentials in the Settings UI.
-
-Supported providers:
-
-- DuckDuckGo; search (free, but will rate limit easily)
-- Brave; search
-- Serper; search
-- Exa; search, fetch
-
-More often than not, `basic` fetch is good enough but requires a CORS proxy configured.
-
-## Development
-
-> [!NOTE]
-> This project is **not production-ready** and is not intended for publication to the Microsoft Add-in Store. Think of it as a framework and reference for building your own Office-based agents. That said, I'm happy to squash bugs — feel free to report them in [Issues](https://github.com/hewliyang/office-agents/issues).
+- Node.js 20 or later
+- pnpm 11.9.0 or later
+- Microsoft PowerPoint desktop for add-in testing
 
 ```bash
-pnpm install                # Install all dependencies
-pnpm dev-server:excel       # Start Excel dev server (https://localhost:3000)
-pnpm dev-server:ppt         # Start PowerPoint dev server (https://localhost:3001)
-pnpm dev-server:word        # Start Word dev server (https://localhost:3002)
-pnpm start:excel            # Launch Excel with add-in sideloaded
-pnpm start:ppt              # Launch PowerPoint with add-in sideloaded
-pnpm start:word             # Launch Word with add-in sideloaded
-pnpm build                  # Build all packages
-pnpm typecheck              # TypeScript type checking (all packages)
-pnpm lint                   # Run Biome linter
-pnpm format                 # Format code with Biome
-pnpm check                  # Typecheck + lint
-pnpm validate               # Validate Office manifests
+git clone https://github.com/KlaraGraff/pptxmate.git
+cd pptxmate
+pnpm install
+pnpm start:ppt
 ```
 
-### Office Bridge
+The PowerPoint development server is available at `https://localhost:3001`.
 
-During development, the Office taskpane auto-connects to a local bridge server. Use the bridge CLI to inspect the live add-in runtime, run tools, and manage VFS files:
+## Optional CC Switch Route
+
+PPTXMate can proxy its local OpenAI-compatible endpoint to CC Switch. CC Switch is a separate application that must be installed, running, and configured independently; PPTXMate never stores CC Switch account credentials.
+
+The default route is:
+
+```text
+https://localhost:3001/v1 -> http://127.0.0.1:15721/v1
+```
+
+In PPTXMate Settings, configure a custom endpoint with the API type and model supported by CC Switch, then use `https://localhost:3001/v1` as the Base URL. Change or disable the route before starting the local server with:
 
 ```bash
-pnpm bridge:serve                                    # Start the bridge server (https://localhost:4017)
-pnpm bridge:stop                                     # Stop the bridge server
-pnpm exec office-bridge list                         # List connected sessions
-pnpm exec office-bridge inspect word                 # Inspect a session's tools & metadata
-pnpm exec office-bridge tool word get_document_text  # Run a tool against the live add-in
-pnpm exec office-bridge screenshot word --out p.png  # Screenshot a document page
-pnpm exec office-bridge vfs ls word /home/user       # Browse the VFS
+PPTXMATE_CC_SWITCH_URL=http://127.0.0.1:25721 pnpm dev-server:ppt
+PPTXMATE_CC_SWITCH_ENABLED=0 pnpm dev-server:ppt
 ```
 
-`exec` can run arbitrary JavaScript directly inside the Office taskpane — useful for debugging and closing the agentic dev loop
+Switch accounts in CC Switch itself. Subsequent PPTXMate requests use the account selected there. The route rejects cross-origin browser requests and non-local host headers.
+
+## Optional macOS Auto Start/Stop
+
+The macOS watcher keeps no model or account credentials. It watches for the `Microsoft PowerPoint` process, starts the local PPTXMate development server and CC Switch route when PowerPoint opens, and terminates only the server process group it owns when PowerPoint closes. It does not start, stop, or switch accounts in the separate CC Switch application. If port `3001` already belongs to another process, the watcher leaves that process untouched.
 
 ```bash
-# Read the active Word document body text
-pnpm exec office-bridge exec word --code \
-  "const body = context.document.body; body.load('text'); await context.sync(); return body.text;"
-
-# Poke at taskpane globals / DOM
-pnpm exec office-bridge exec word --code "return { href: window.location.href, title: document.title }"
+./scripts/install-macos-powerpoint-watcher.sh
 ```
 
-See [`packages/bridge/README.md`](./packages/bridge/README.md) for full CLI documentation.
+To persist a custom CC Switch address, or disable that route for watcher-managed sessions, provide the setting while installing:
 
-## License
+```bash
+./scripts/install-macos-powerpoint-watcher.sh --cc-switch-url http://127.0.0.1:25721
+./scripts/install-macos-powerpoint-watcher.sh --no-cc-switch
+```
 
-MIT
+Preview the generated LaunchAgent without installing or changing local files with `./scripts/install-macos-powerpoint-watcher.sh --dry-run`.
+
+Remove it with:
+
+```bash
+./scripts/uninstall-macos-powerpoint-watcher.sh
+```
+
+Use `./scripts/uninstall-macos-powerpoint-watcher.sh --remove-logs` to remove the watcher's own log files as well.
+
+The installer discovers the current repository, Node.js, and pnpm paths and generates a user-specific LaunchAgent outside the repository. It also migrates the earlier local OpenPPT watcher when present.
+
+## Repository Structure
+
+PPTXMate keeps the shared SDK and UI packages from the upstream Office Agents monorepo for compatibility:
+
+| Package | Purpose |
+| --- | --- |
+| [`@office-agents/powerpoint`](./packages/powerpoint) | PPTXMate PowerPoint add-in, routing, slide tools, and manifests |
+| [`@office-agents/core`](./packages/core) | Shared Svelte chat UI and clipboard attachment handling |
+| [`@office-agents/sdk`](./packages/sdk) | Agent runtime, context recovery, providers, storage, VFS, and sandbox |
+| [`@office-agents/bridge`](./packages/bridge) | Optional local runtime inspection bridge |
+| [`@office-agents/excel`](./packages/excel) | Retained upstream Excel add-in package |
+| [`@office-agents/word`](./packages/word) | Retained upstream Word add-in package |
+
+Internal package names remain unchanged to minimize divergence from upstream. The PowerPoint storage identifiers `openppt-*` and `OpenPPTDB_v1` are also retained so existing local settings and conversations survive the product rename. References to the earlier OpenPPT LaunchAgent label in the watcher scripts exist only to migrate or remove that legacy agent.
+
+## Validation
+
+```bash
+pnpm test
+pnpm typecheck
+pnpm lint
+pnpm validate
+pnpm build
+```
+
+## Upstream And License
+
+PPTXMate is derived from [hewliyang/office-agents](https://github.com/hewliyang/office-agents) and retains its Git history. See [NOTICE.md](./NOTICE.md) for attribution.
+
+Released under the [MIT License](./LICENSE).

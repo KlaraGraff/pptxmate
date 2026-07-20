@@ -7,6 +7,10 @@ import { fileURLToPath } from "url";
 import { defineConfig } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import {
+  createCcSwitchProxy,
+  isAllowedCcSwitchRequest,
+} from "./cc-switch-proxy";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -26,9 +30,10 @@ async function getHttpsOptions() {
 export default defineConfig(async ({ mode }) => {
   const dev = mode === "development";
   const urlDev = "https://localhost:3001/";
-  const urlProd = "https://openppt-9p7.pages.dev/";
+  const urlProd = "https://klaragraff.github.io/pptxmate/";
 
   return {
+    base: dev ? "/" : "/pptxmate/",
     root: "src",
     publicDir: "../public",
 
@@ -69,6 +74,26 @@ export default defineConfig(async ({ mode }) => {
     plugins: [
       svelte(),
 
+      {
+        name: "pptxmate-cc-switch-request-guard",
+        configureServer(server) {
+          server.middlewares.use((request, response, next) => {
+            const pathname = (request.url ?? "").split("?", 1)[0];
+            if (pathname !== "/v1" && !pathname.startsWith("/v1/")) {
+              next();
+              return;
+            }
+            if (isAllowedCcSwitchRequest(request.headers)) {
+              next();
+              return;
+            }
+            response.statusCode = 403;
+            response.setHeader("Content-Type", "text/plain; charset=utf-8");
+            response.end("Forbidden CC Switch proxy origin.");
+          });
+        },
+      },
+
       nodePolyfills({
         include: [
           "buffer",
@@ -98,6 +123,14 @@ export default defineConfig(async ({ mode }) => {
       viteStaticCopy({
         targets: [
           {
+            src: "../../../LICENSE",
+            dest: ".",
+          },
+          {
+            src: "../../../THIRD_PARTY_NOTICES.md",
+            dest: ".",
+          },
+          {
             src: "../manifest*.xml",
             dest: ".",
             transform: {
@@ -115,9 +148,8 @@ export default defineConfig(async ({ mode }) => {
     server: {
       https: await getHttpsOptions(),
       port: 3001,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-      },
+      cors: false,
+      proxy: createCcSwitchProxy(),
     },
   };
 });

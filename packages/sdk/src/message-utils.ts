@@ -39,19 +39,46 @@ export interface SessionStats {
   lastInputTokens: number;
 }
 
+export interface RuntimeUsageCarry {
+  inputTokens: number;
+  outputTokens: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalCost: number;
+  lastInputTokens: number;
+}
+
+function contentToText(
+  content: string | { type: string; text?: string }[],
+): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((c) => c.type === "text")
+    .map((c) => c.text ?? "")
+    .join("\n");
+}
+
+function isRuntimeControlMessage(
+  content: string | { type: string; text?: string }[],
+): boolean {
+  const text = contentToText(content).trim();
+  return (
+    /^<runtime_continue>[\s\S]*<\/runtime_continue>$/.test(text) ||
+    /^<runtime_recovery>[\s\S]*<\/runtime_recovery>$/.test(text)
+  );
+}
+
 export function stripEnrichment(
   content: string | { type: string; text?: string }[],
   metadataTag?: string,
 ): string {
-  let text: string;
-  if (typeof content === "string") {
-    text = content;
-  } else {
-    text = content
-      .filter((c) => c.type === "text")
-      .map((c) => c.text ?? "")
-      .join("\n");
-  }
+  let text = contentToText(content);
+  text = text.replace(/^<runtime_continue>[\s\S]*<\/runtime_continue>$/, "");
+  text = text.replace(
+    /^<runtime_recovery>[\s\S]*?<\/runtime_recovery>\r?\n\r?\n/,
+    "",
+  );
+  text = text.replace(/^<runtime_recovery>[\s\S]*<\/runtime_recovery>$/, "");
   text = text.replace(/^<attachments>\n[\s\S]*?\n<\/attachments>\n\n/, "");
   if (metadataTag) {
     const escaped = metadataTag.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -109,6 +136,7 @@ export function agentMessagesToChatMessages(
   const result: ChatMessage[] = [];
   for (const msg of agentMessages) {
     if (msg.role === "user") {
+      if (isRuntimeControlMessage((msg as UserMessage).content)) continue;
       const text = stripEnrichment((msg as UserMessage).content, metadataTag);
       result.push({
         id: generateId(),
@@ -167,6 +195,16 @@ export function deriveStats(
   let totalCost = 0;
   let lastInputTokens = 0;
   for (const msg of agentMessages) {
+    const carry = (msg as AgentMessage & { _runtimeUsage?: RuntimeUsageCarry })
+      ._runtimeUsage;
+    if (carry) {
+      inputTokens += carry.inputTokens;
+      outputTokens += carry.outputTokens;
+      cacheRead += carry.cacheRead;
+      cacheWrite += carry.cacheWrite;
+      totalCost += carry.totalCost;
+      lastInputTokens = carry.lastInputTokens;
+    }
     if (msg.role === "assistant") {
       const u = (msg as AssistantMessage).usage;
       if (u) {

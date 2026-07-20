@@ -1,8 +1,28 @@
-import type { AppAdapter } from "@office-agents/core";
+import type {
+  AppAdapter,
+  DocumentMetadataRequest,
+  MessagePreparationInfo,
+  SkillMeta,
+} from "@office-agents/core";
 import { getOrCreateDocumentId } from "@office-agents/core";
 import SelectionIndicator from "./components/selection-indicator.svelte";
 import pptApiDts from "./docs/powerpoint-officejs-api.d.ts?raw";
+import { getSlideDirectoryVersion } from "./pptx/slide-directory";
+import {
+  getPowerPointToolRecoveryInfo,
+  normalizePowerPointToolArgsForReplay,
+} from "./recovery-router";
+import {
+  type CompactContextMessage,
+  compactPowerPointContext,
+  type PowerPointTaskRoute,
+} from "./request-router";
 import { buildPowerPointSystemPrompt } from "./system-prompt";
+import {
+  needsPowerPointThemeContext,
+  powerPointToolAllowlist,
+  routePowerPointMessage,
+} from "./tool-router";
 import { createPptTools } from "./tools";
 import { getCustomCommands } from "./vfs/custom-commands";
 
@@ -16,16 +36,28 @@ const STORAGE_NAMESPACE = {
   documentIdSettingsKey: "openppt-presentation-id",
 };
 
+function selectMessageTools(
+  userMessage: string,
+  ctx: Parameters<typeof createPptTools>[0],
+  info: MessagePreparationInfo,
+) {
+  const tools = createPptTools(ctx);
+  const allow = powerPointToolAllowlist(userMessage, info);
+  if (!allow) return tools;
+  return tools.filter((tool) => allow.has(tool.name));
+}
+
 export function createPowerPointAdapter(): AppAdapter {
   return {
     tools: (ctx) => createPptTools(ctx),
+    toolsForMessage: selectMessageTools,
     customCommands: getCustomCommands,
     hasImageSearch: true,
     staticFiles: {
       "/home/user/docs/powerpoint-officejs-api.d.ts": pptApiDts,
     },
 
-    appName: "OpenPPT",
+    appName: "PPTXMate",
     metadataTag: "ppt_context",
     storageNamespace: STORAGE_NAMESPACE,
     appVersion: __APP_VERSION__,
@@ -33,14 +65,58 @@ export function createPowerPointAdapter(): AppAdapter {
       "Start a conversation to create or edit your presentation",
     SelectionIndicator,
     buildSystemPrompt: buildPowerPointSystemPrompt,
+    buildSystemPromptForMessage: (
+      userMessage: string,
+      skills: SkillMeta[],
+      commandSnippets: string[],
+      info?: MessagePreparationInfo,
+    ) =>
+      buildPowerPointSystemPrompt(
+        skills,
+        commandSnippets,
+        routePowerPointMessage(userMessage, info),
+      ),
+    metadataHistory: "latest",
+    getToolRecoveryInfo: getPowerPointToolRecoveryInfo,
+    normalizeToolArgsForReplay: normalizePowerPointToolArgsForReplay,
+    toolExecution: "sequential",
+    transformContext: async (messages, _signal, info) => {
+      const baseMaxChars = info
+        ? Math.min(
+            60_000,
+            Math.max(
+              12_000,
+              info.contextWindow * 2 - info.systemPromptChars - 12_000,
+            ),
+          )
+        : 60_000;
+      const maxChars = Math.max(
+        6_000,
+        Math.floor(baseMaxChars / 2 ** Math.max(0, info?.recoveryAttempt ?? 0)),
+      );
+      return compactPowerPointContext(
+        messages as unknown as CompactContextMessage[],
+        { maxChars },
+      ) as unknown as typeof messages;
+    },
 
     getDocumentId: async () => {
       return getOrCreateDocumentId(STORAGE_NAMESPACE);
     },
 
-    getDocumentMetadata: async () => {
+    getDocumentMetadata: async (request?: DocumentMetadataRequest) => {
       try {
-        const metadata = await getPresentationMetadata();
+        const route = request
+          ? routePowerPointMessage(request.userMessage, request.info)
+          : "general";
+        const includeThemeContext = needsPowerPointThemeContext(
+          request?.userMessage ?? "",
+          route,
+        );
+        const metadata = await getPresentationMetadata(
+          route,
+          includeThemeContext,
+        );
         return { metadata };
       } catch {
         return null;
@@ -51,8 +127,10 @@ export function createPowerPointAdapter(): AppAdapter {
       if (isError) return;
       try {
         const parsed = JSON.parse(result);
-        if (typeof parsed._modifiedSlide === "number") {
-          navigateToSlide(parsed._modifiedSlide).catch(console.error);
+        if (typeof parsed._modifiedSlideId === "string") {
+          navigateToSlideById(parsed._modifiedSlideId).catch(console.error);
+        } else if (typeof parsed._modifiedSlide === "number") {
+          navigateToSlideByIndex(parsed._modifiedSlide).catch(console.error);
         }
       } catch {
         // Not JSON or no modified slide info
@@ -61,7 +139,15 @@ export function createPowerPointAdapter(): AppAdapter {
   };
 }
 
-async function navigateToSlide(slideIndex: number): Promise<void> {
+async function navigateToSlideById(slideId: string): Promise<void> {
+  return PowerPoint.run(async (context) => {
+    context.presentation.setSelectedSlides([slideId]);
+    await context.sync();
+  });
+}
+
+/** Legacy recovery path for tools that still return an index during migration. */
+async function navigateToSlideByIndex(slideIndex: number): Promise<void> {
   return PowerPoint.run(async (context) => {
     const slides = context.presentation.slides;
     slides.load("items/id");
@@ -118,7 +204,7 @@ async function detectThemeDefault(
       colorResults[key] = scheme.getThemeColor(key);
     }
 
-    master.shapes.load("items");
+    master.shapes.load("items/id");
     await context.sync();
 
     let matchCount = 0;
@@ -149,25 +235,25 @@ async function detectThemeDefault(
   }
 }
 
-async function getPresentationMetadata(): Promise<object> {
+async function getPresentationMetadata(
+  route: PowerPointTaskRoute = "general",
+  includeThemeContext = route === "create",
+): Promise<object> {
   return PowerPoint.run(async (context) => {
     const slides = context.presentation.slides;
     slides.load("items/id");
-
-    const pageSetup = context.presentation.pageSetup;
-    pageSetup.load(["slideWidth", "slideHeight"]);
-
-    const masters = context.presentation.slideMasters;
-    masters.load("items");
 
     const selectedSlides = context.presentation.getSelectedSlides();
     selectedSlides.load("items/id");
 
     let selectedShapesCollection: PowerPoint.ShapeScopedCollection | undefined;
+    const needsGeometry = route === "layout" || route === "verify";
     try {
       selectedShapesCollection = context.presentation.getSelectedShapes();
       selectedShapesCollection.load(
-        "items/name,items/type,items/id,items/left,items/top,items/width,items/height",
+        needsGeometry
+          ? "items/name,items/type,items/id,items/left,items/top,items/width,items/height"
+          : "items/name,items/type,items/id",
       );
     } catch {
       // getSelectedShapes may not be available on older hosts
@@ -175,60 +261,99 @@ async function getPresentationMetadata(): Promise<object> {
 
     await context.sync();
 
-    for (const master of masters.items) {
-      master.layouts.load("items/name,items/id");
-    }
-    await context.sync();
-
-    let hasContent = false;
-    if (slides.items.length > 0) {
-      const allShapes = slides.items.map((slide) => {
-        const shapes = slide.shapes;
-        shapes.load("items");
-        return shapes;
-      });
-      await context.sync();
-      hasContent = allShapes.some((shapes) => shapes.items.length > 0);
-    }
-
-    const themeResult =
-      masters.items.length > 0
-        ? await detectThemeDefault(masters.items[0], context)
-        : { isDefault: true, confidence: "low" as const };
-
     const idToIndex = new Map(slides.items.map((s, i) => [s.id, i]));
     const selectedIndices = selectedSlides.items.map((s) => ({
       slideId: s.id,
       positionOneIndexed: (idToIndex.get(s.id) ?? 0) + 1,
     }));
 
-    const selectedShapes =
-      selectedShapesCollection?.items.map((s) => ({
-        name: s.name,
-        type: s.type,
-        id: s.id,
+    const selectedShapes = (selectedShapesCollection?.items ?? []).map((s) => {
+      const base = { name: s.name, type: s.type, id: s.id };
+      if (!needsGeometry) return base;
+      return {
+        ...base,
         left: s.left,
         top: s.top,
         width: s.width,
         height: s.height,
-      })) ?? [];
+      };
+    });
 
-    return {
+    const metadata: Record<string, unknown> = {
+      schemaVersion: 2,
+      route,
       slideCount: slides.items.length,
-      slideWidth: pageSetup.slideWidth,
-      slideHeight: pageSetup.slideHeight,
-      isDefaultTheme: themeResult.isDefault,
-      themeDetectionConfidence: themeResult.confidence,
-      hasContent,
+      directoryVersion: getSlideDirectoryVersion(
+        slides.items.map((slide) => slide.id),
+      ),
       selectedSlides: selectedIndices,
       selectedShapes,
-      masters: masters.items.map((m, mi) => ({
-        index: mi,
-        layouts: m.layouts.items.map((l) => ({
-          name: l.name,
-          id: l.id,
-        })),
-      })),
+      omittedFields:
+        route === "text" || route === "general"
+          ? [
+              "slideGeometry",
+              "shapeGeometry",
+              "theme",
+              "masters",
+              "layouts",
+              "fonts",
+              "colors",
+              "slideText",
+            ]
+          : route === "verify"
+            ? ["theme", "masters", "layouts", "fonts", "colors", "slideText"]
+            : includeThemeContext
+              ? ["slideText", "shapeFormatting"]
+              : ["slideText", "shapeFormatting", "theme", "masters", "layouts"],
     };
+
+    // Geometry/theme/master data is opt-in. Text-only requests should not
+    // force PowerPoint to hydrate or serialize presentation styling.
+    if (route === "layout" || route === "create" || route === "verify") {
+      const pageSetup = context.presentation.pageSetup;
+      pageSetup.load(["slideWidth", "slideHeight"]);
+      await context.sync();
+      metadata.slideWidth = pageSetup.slideWidth;
+      metadata.slideHeight = pageSetup.slideHeight;
+    }
+
+    if (includeThemeContext) {
+      const masters = context.presentation.slideMasters;
+      masters.load("items/id");
+      await context.sync();
+
+      for (const master of masters.items) {
+        master.layouts.load("items/name,items/id");
+      }
+      await context.sync();
+
+      metadata.masters = masters.items.map((m, mi) => ({
+        index: mi,
+        layouts: m.layouts.items.map((l) => ({ name: l.name, id: l.id })),
+      }));
+
+      const themeResult =
+        masters.items.length > 0
+          ? await detectThemeDefault(masters.items[0], context)
+          : { isDefault: true, confidence: "low" as const };
+      metadata.isDefaultTheme = themeResult.isDefault;
+      metadata.themeDetectionConfidence = themeResult.confidence;
+    }
+
+    if (route === "create") {
+      // Only load lightweight shape IDs when a blank-vs-existing decision is
+      // actually needed. The IDs never leave the host; only the boolean does.
+      const shapeCollections = slides.items.map((slide) => {
+        const shapes = slide.shapes;
+        shapes.load("items/id");
+        return shapes;
+      });
+      await context.sync();
+      metadata.hasContent = shapeCollections.some(
+        (shapes) => shapes.items.length > 0,
+      );
+    }
+
+    return metadata;
   });
 }

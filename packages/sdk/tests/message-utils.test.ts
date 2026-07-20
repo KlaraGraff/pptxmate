@@ -43,6 +43,22 @@ describe("stripEnrichment", () => {
     expect(stripEnrichment("just a question")).toBe("just a question");
   });
 
+  it("strips internal continuation control messages", () => {
+    expect(
+      stripEnrichment(
+        "<runtime_continue>Continue where the response stopped.</runtime_continue>",
+      ),
+    ).toBe("");
+  });
+
+  it("strips hidden recovery instructions while preserving the user request", () => {
+    expect(
+      stripEnrichment(
+        "<runtime_recovery>\nverify before writing\n</runtime_recovery>\n\nContinue translating slide 3",
+      ),
+    ).toBe("Continue translating slide 3");
+  });
+
   it("handles array content (multi-part messages)", () => {
     const content = [
       { type: "text", text: "<attachments>\nf.csv\n</attachments>\n\nHello" },
@@ -167,6 +183,54 @@ describe("agentMessagesToChatMessages", () => {
     ];
     const result = agentMessagesToChatMessages(messages);
     expect(result[0].parts[0]).toEqual({ type: "text", text: "Question" });
+  });
+
+  it("hides internal continuation messages from the chat transcript", () => {
+    const messages = [
+      {
+        role: "user" as const,
+        content:
+          "<runtime_continue>Continue exactly where the response stopped.</runtime_continue>",
+        timestamp: 1000,
+      },
+      {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "continued" }],
+        timestamp: 1001,
+        stopReason: "stop" as const,
+        api: "openai-completions" as const,
+        provider: "openai",
+        model: "gpt-4",
+        usage,
+      },
+    ];
+    const result = agentMessagesToChatMessages(messages);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("assistant");
+  });
+
+  it("hides internal recovery messages from the chat transcript", () => {
+    const messages = [
+      {
+        role: "user" as const,
+        content:
+          "<runtime_recovery>\nInspect the current slide before writing.\n</runtime_recovery>",
+        timestamp: 1000,
+      },
+      {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "recovered" }],
+        timestamp: 1001,
+        stopReason: "stop" as const,
+        api: "openai-completions" as const,
+        provider: "openai",
+        model: "gpt-4",
+        usage,
+      },
+    ];
+    const result = agentMessagesToChatMessages(messages);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe("assistant");
   });
 
   it("links tool results back to their assistant tool call", () => {
@@ -372,5 +436,54 @@ describe("deriveStats", () => {
     ];
     const stats = deriveStats(messages);
     expect(stats.inputTokens).toBe(0);
+  });
+
+  it("includes persisted usage from hidden overflow attempts", () => {
+    const messages = [
+      {
+        role: "user" as const,
+        content: "retry this request",
+        timestamp: 1,
+        _runtimeUsage: {
+          inputTokens: 120,
+          outputTokens: 5,
+          cacheRead: 20,
+          cacheWrite: 0,
+          totalCost: 0.012,
+          lastInputTokens: 140,
+        },
+      },
+      {
+        role: "assistant" as const,
+        content: [{ type: "text" as const, text: "done" }],
+        timestamp: 2,
+        stopReason: "stop" as const,
+        api: "openai-completions" as const,
+        provider: "openai",
+        model: "gpt-4",
+        usage: {
+          input: 80,
+          output: 20,
+          cacheRead: 10,
+          cacheWrite: 0,
+          totalTokens: 110,
+          cost: {
+            input: 0.008,
+            output: 0.004,
+            cacheRead: 0.001,
+            cacheWrite: 0,
+            total: 0.013,
+          },
+        },
+      },
+    ];
+
+    expect(deriveStats(messages)).toMatchObject({
+      inputTokens: 200,
+      outputTokens: 25,
+      cacheRead: 30,
+      totalCost: 0.025,
+      lastInputTokens: 90,
+    });
   });
 });

@@ -1,8 +1,14 @@
 import type { AgentContext } from "@office-agents/core";
 import { sandboxedEval } from "@office-agents/core";
 import { Type } from "@sinclair/typebox";
+import {
+  slideTargetParameterProperties,
+  toSlideMutationNotStartedError,
+  toSlideTargetReference,
+} from "../pptx/slide-directory";
 import { safeRun, withSlideZip } from "../pptx/slide-zip";
 import { escapeXml } from "../pptx/xml-utils";
+import { unpackSlideZipResult } from "./slide-target-result";
 import { defineTool, toolError, toolSuccess } from "./types";
 
 /* global PowerPoint */
@@ -15,10 +21,7 @@ export function createEditSlideChartTool(ctx: AgentContext) {
       "Add or edit charts in a PowerPoint slide by manipulating raw OOXML. " +
       "Always use this for data visualizations — never approximate charts with geometric shapes.",
     parameters: Type.Object({
-      slide_index: Type.Number({
-        description:
-          "0-based slide index (user's slide 1 = index 0, slide 3 = index 2)",
-      }),
+      ...slideTargetParameterProperties,
       code: Type.String({
         description:
           "Async function body receiving { zip, markDirty }. zip is a JSZip archive of the slide. " +
@@ -37,8 +40,9 @@ export function createEditSlideChartTool(ctx: AgentContext) {
     }),
     execute: async (_toolCallId, params) => {
       try {
-        const result = await safeRun(async (context) => {
-          return withSlideZip(context, params.slide_index, async (args) => {
+        const target = toSlideTargetReference(params);
+        const zipValue = await safeRun(async (context) => {
+          return withSlideZip(context, target, async (args) => {
             return sandboxedEval(params.code, {
               ...args,
               escapeXml,
@@ -51,17 +55,24 @@ export function createEditSlideChartTool(ctx: AgentContext) {
             });
           });
         });
+        const { result, metadata } = unpackSlideZipResult(zipValue, target);
 
         return toolSuccess({
           success: true,
+          ...metadata,
           result: result !== undefined ? result : null,
         });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to edit slide chart";
-        return toolError(message);
+        const normalized = toSlideMutationNotStartedError(
+          error,
+          "Failed to edit slide chart",
+        );
+        return toolError(normalized.message, normalized);
       }
     },
-    modifiedSlide: (params) => params.slide_index,
+    modifiedSlide: (params, result) =>
+      result && typeof result.slideId === "string"
+        ? result.slideId
+        : (params.slide_id ?? params.slide_index),
   });
 }

@@ -2,13 +2,15 @@
 
 ## Project Overview
 
-**Office Agents** is a pnpm monorepo containing Microsoft Office Add-ins with integrated AI chat interfaces. Users can chat with LLM providers (OpenAI, Anthropic, Google, etc.) directly within Office apps using their own API keys (BYOK). The agent has Office read/write tools, a sandboxed bash shell, and a virtual filesystem for file uploads.
+**PPTXMate** is an open-source PowerPoint AI add-in derived from the Office Agents monorepo. It focuses on token-efficient PowerPoint reading and editing, stable slide targeting, interruption recovery, clipboard image attachments, and optional local integrations. The upstream Excel, Word, SDK, Core, and Bridge packages remain in the workspace so the PowerPoint package can stay compatible with upstream architecture.
+
+The internal `@office-agents/*` package names are intentionally retained. Do not rename them as part of product branding without a coordinated workspace and import migration.
 
 - **@office-agents/sdk** (`packages/sdk/`) — Headless SDK: agent runtime, tools (bash, read), storage, VFS, skills, OAuth, web search/fetch, provider config
 - **@office-agents/core** (`packages/core/`) — Svelte chat UI layer: re-exports SDK + ChatInterface, settings panel, sessions, message rendering
 - **@office-agents/bridge** (`packages/bridge/`) — Local HTTPS/WebSocket RPC bridge + CLI for talking to a live Office add-in runtime during development
 - **@office-agents/excel** (`packages/excel/`) — Excel Add-in: spreadsheet tools, Office.js wrappers, system prompt, cell-range follow mode
-- **@office-agents/powerpoint** (`packages/powerpoint/`) — PowerPoint Add-in: slide/OOXML tools, JSZip-based PPTX editing, system prompt
+- **@office-agents/powerpoint** (`packages/powerpoint/`) — PPTXMate add-in: routed slide reads/writes, stable IDs, OOXML tools, CC Switch proxy, and manifests
 - **@office-agents/word** (`packages/word/`) — Word Add-in: document text/structure/OOXML tools, screenshots, Office.js escape hatch
 
 ### Key Paths
@@ -24,8 +26,13 @@
 - `packages/excel/src/lib/adapter.ts` — Excel `AppAdapter` (tools, prompt, metadata, follow mode)
 - `packages/excel/src/lib/tools/` — Excel-specific tools (`set-cell-range`, `get-cell-ranges`, `eval-officejs`, etc.)
 - `packages/powerpoint/src/lib/adapter.ts` — PowerPoint `AppAdapter` (tools, prompt, metadata)
+- `packages/powerpoint/src/lib/request-router.ts` — Local task classification and context compaction
+- `packages/powerpoint/src/lib/tool-router.ts` — Per-request PowerPoint tool allowlists
+- `packages/powerpoint/src/lib/recovery-router.ts` — Mutation-aware recovery scopes and replay normalization
 - `packages/powerpoint/src/lib/tools/` — PPT tools (`edit-slide-xml`, `screenshot-slide`, `edit-slide-chart`, etc.)
-- `packages/powerpoint/src/lib/pptx/` — OOXML/PPTX helpers (`slide-zip.ts`, `xml-utils.ts`)
+- `packages/powerpoint/src/lib/pptx/` — OOXML/PPTX helpers, stable slide directory, and text XML utilities
+- `packages/powerpoint/cc-switch-proxy.ts` — Optional guarded local CC Switch route
+- `scripts/*powerpoint-watcher*` — Optional macOS PowerPoint lifecycle watcher and installer
 - `packages/word/src/lib/adapter.ts` — Word `AppAdapter` (tools, prompt, metadata)
 - `packages/word/src/lib/tools/` — Word tools (`get-document-text`, `get-document-structure`, `get-paragraph-ooxml`, `screenshot-document`, `execute-office-js`)
 
@@ -37,7 +44,7 @@
 - **Icons**: Lucide icons (`lucide-svelte`)
 - **Build Tool**: Vite 6
 - **Office Integration**: Office.js API (`@types/office-js`)
-- **LLM Integration**: `@mariozechner/pi-ai` + `@mariozechner/pi-agent-core` (unified LLM & agent API)
+- **LLM Integration**: `@earendil-works/pi-ai` + `@earendil-works/pi-agent-core` (unified LLM & agent API)
 - **Virtual Filesystem / Bash**: `just-bash` (in-memory VFS + shell)
 - **Dev Server**: Vite dev server with HTTPS
 - **Monorepo**: pnpm workspaces
@@ -70,7 +77,7 @@ The core `ChatInterface` component accepts an adapter and handles all generic ch
 
 ### VFS Custom Commands
 
-App-specific VFS commands are registered via `setCustomCommands()` from SDK. Excel registers: `csv-to-sheet`, `sheet-to-csv`, `pdf-to-text`, `docx-to-text`, `xlsx-to-csv`, `image-to-sheet`, `web-search`, `web-fetch`. PowerPoint registers: `pdf-to-text`, `pdf-to-images`, `docx-to-text`, `xlsx-to-csv`, `web-search`, `web-fetch`.
+App-specific VFS commands are registered via `setCustomCommands()` from SDK. PowerPoint adds `insert-image`, `search-icons`, and `insert-icon` to the shared document conversion and web commands. PowerPoint mutations should prefer stable `slide_id` values and use the returned replacement ID after an OOXML re-import.
 
 ## Development Commands
 
@@ -91,7 +98,12 @@ pnpm format              # Format code with Biome
 pnpm typecheck           # TypeScript type checking (all packages)
 pnpm check               # Typecheck + lint
 pnpm validate            # Validate Office manifests
+pnpm licenses:generate   # Refresh THIRD_PARTY_NOTICES.md from the lockfile
+./scripts/install-macos-powerpoint-watcher.sh    # Install optional macOS watcher
+./scripts/uninstall-macos-powerpoint-watcher.sh  # Remove optional macOS watcher
 ```
+
+The CC Switch proxy is local-only. CC Switch must be installed, running, and configured separately; the watcher starts and stops PPTXMate's local server, not the CC Switch application. Configure the route with `PPTXMATE_CC_SWITCH_URL` or disable it with `PPTXMATE_CC_SWITCH_ENABLED=0`.
 
 ### Office Bridge
 
@@ -132,59 +144,47 @@ Bridge defaults:
 
 ## Release Workflow
 
-Each app is released independently with its own version tag, changelog, and Cloudflare Pages project.
+PPTXMate publishes only the PowerPoint add-in from this repository. A push to `main` runs `.github/workflows/deploy-pptxmate-pages.yml`, which tests the PowerPoint package, refreshes third-party notices, builds `packages/powerpoint/dist`, and deploys it to GitHub Pages.
 
-| Package    | Tag prefix    | Changelog                          | Deploy target    |
-| ---------- | ------------- | ---------------------------------- | ---------------- |
-| Excel      | `excel-v*`    | `packages/excel/CHANGELOG.md`      | CF Pages `openexcel` |
-| PowerPoint | `ppt-v*`      | `packages/powerpoint/CHANGELOG.md` | CF Pages `openppt`   |
-| Word       | `word-v*`     | `packages/word/CHANGELOG.md`       | CF Pages `openword`  |
-| SDK        | `sdk-v*`      | `packages/sdk/CHANGELOG.md`        | npm `@office-agents/sdk` |
-| Bridge     | `bridge-v*`   | `packages/bridge/CHANGELOG.md`     | npm `@office-agents/bridge` |
+- Production URL: `https://klaragraff.github.io/pptxmate/`
+- Public manifest: `https://klaragraff.github.io/pptxmate/manifest.prod.xml`
+- Changelog: `packages/powerpoint/CHANGELOG.md`
+- Source attribution: `NOTICE.md`
 
-### Steps (per app)
-
-1. Add changes under `## [Unreleased]` in the app's `CHANGELOG.md`
-2. Run the release script:
-   ```bash
-   pnpm release:excel patch    # or minor/major
-   pnpm release:ppt patch      # or minor/major
-   pnpm release:word patch     # or minor/major
-   pnpm release:sdk patch      # or minor/major
-   pnpm release:bridge patch   # or minor/major
-   ```
-3. The script bumps the version, stamps the changelog, commits, tags (`excel-v*` / `ppt-v*` / `word-v*` / `sdk-v*` / `bridge-v*`), and pushes
-4. CI builds, deploys to Cloudflare Pages, and creates a GitHub release
+The inherited `scripts/release.mjs` and upstream application tags are not the PPTXMate release path. Do not publish the retained `@office-agents/*` packages to npm or push inherited tags as new PPTXMate releases.
 
 ## Configuration Storage
 
-User settings stored in browser localStorage (legacy `openexcel-` prefix):
+PPTXMate deliberately retains the legacy OpenPPT storage namespace so existing local settings and conversations survive the rename:
 
-| Key                            | Contents                                                                                           |
-| ------------------------------ | -------------------------------------------------------------------------------------------------- |
-| `openexcel-provider-config`    | `{ provider, apiKey, model, useProxy, proxyUrl, thinking, followMode, apiType, customBaseUrl, authMethod }` |
-| `openexcel-oauth-credentials`  | `{ [provider]: { refresh, access, expires } }`                                                   |
-| `openexcel-web-config`         | `{ searchProvider, fetchProvider, apiKeys }` |
-| `office-agents-theme`          | `"light"` or `"dark"` |
+| Key | Contents |
+| --- | --- |
+| `openppt-provider-config` | Provider, model, endpoint, auth method, and local proxy settings |
+| `openppt-oauth-credentials` | Provider OAuth access and refresh credentials |
+| `openppt-web-config` | Web search/fetch provider configuration |
+| `openppt-presentation-id` | Persistent PowerPoint presentation identifier |
+| `office-agents-theme` | Shared `"light"` or `"dark"` theme preference |
 
-Session data (messages, VFS files, skills) stored in IndexedDB via `idb` (`OpenExcelDB_v3`).
+Session data and VFS files remain in IndexedDB `OpenPPTDB_v1`. The `openppt` and `OpenPPTDB_v1` strings are compatibility identifiers, not stale visible branding. Changing them requires an explicit data migration and tests.
 
-## Excel API Usage
+## PowerPoint API Usage
 
 ```typescript
-await Excel.run(async (context) => {
-  const sheet = context.workbook.worksheets.getActiveWorksheet();
-  const range = sheet.getRange("A1");
-  range.values = [["value"]];
+await PowerPoint.run(async (context) => {
+  const slides = context.presentation.slides;
+  slides.load("items/id");
   await context.sync();
+  return slides.items.map((slide) => slide.id);
 });
 ```
+
+Load only the fields required by the current route. Treat `slide_id` as authoritative and an index as a current directory hint; resolve the ID again immediately before a mutation.
 
 ## References
 
 - `packages/bridge/README.md` — bridge usage and CLI docs
 
 - [Office Add-ins Documentation](https://learn.microsoft.com/en-us/office/dev/add-ins/)
-- [Excel JavaScript API](https://learn.microsoft.com/en-us/javascript/api/excel)
-- [pi-ai / pi-agent-core](https://github.com/badlogic/pi-mono)
+- [PowerPoint JavaScript API](https://learn.microsoft.com/en-us/javascript/api/powerpoint)
+- [pi-ai / pi-agent-core](https://github.com/earendil-works/pi-mono)
 - [just-bash](https://github.com/nickvdyck/just-bash)

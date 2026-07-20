@@ -26,3 +26,7 @@ npm-debug.log*
 *.key
 *.pem
 headless-test/
+
+# Local PPTXMate lifecycle state
+.local/
+scripts/com.local.*.plist

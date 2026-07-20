@@ -4,6 +4,7 @@ import type { StorageNamespace } from "../src/context";
 import {
   createSession,
   getSession,
+  getSessionMessageCount,
   listSessions,
   listSkillNames,
   loadSkillFiles,
@@ -46,6 +47,71 @@ describe("storage/db", () => {
 
   afterEach(async () => {
     await deleteCurrentDb();
+  });
+
+  it("does not count hidden runtime continuation messages", () => {
+    expect(
+      getSessionMessageCount({
+        id: "session-1",
+        workbookId: "doc-1",
+        name: "Test",
+        createdAt: 1,
+        updatedAt: 1,
+        agentMessages: [
+          { role: "user", content: "Visible request", timestamp: 1 },
+          {
+            role: "assistant",
+            content: [],
+            timestamp: 2,
+            stopReason: "length",
+            api: "openai-completions",
+            provider: "openai",
+            model: "gpt-4",
+            usage: {
+              input: 1,
+              output: 1,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 2,
+              cost: {
+                input: 0,
+                output: 0,
+                cacheRead: 0,
+                cacheWrite: 0,
+                total: 0,
+              },
+            },
+          },
+          {
+            role: "user",
+            content:
+              "<runtime_continue>Continue where the response stopped.</runtime_continue>",
+            timestamp: 3,
+          },
+        ],
+      }),
+    ).toBe(2);
+  });
+
+  it("does not count hidden runtime recovery messages", () => {
+    expect(
+      getSessionMessageCount({
+        id: "session-recovery",
+        workbookId: "doc-1",
+        name: "Test",
+        createdAt: 1,
+        updatedAt: 1,
+        agentMessages: [
+          { role: "user", content: "Visible request", timestamp: 1 },
+          {
+            role: "user",
+            content:
+              "<runtime_recovery>\nInspect before another write.\n</runtime_recovery>",
+            timestamp: 2,
+          },
+        ],
+      }),
+    ).toBe(1);
   });
 
   it("derives a session name from the first user message after stripping metadata and attachments", async () => {
@@ -119,10 +185,7 @@ describe("storage/db", () => {
     const sessions = await listSessions(ns, "doc-2");
 
     expect(savedOlder?.name).toBe("Pinned analysis");
-    expect(sessions.map((session) => session.id)).toEqual([
-      newer.id,
-      older.id,
-    ]);
+    expect(sessions.map((session) => session.id)).toEqual([newer.id, older.id]);
   });
 
   it("replaces the full VFS snapshot for one session without touching another session", async () => {

@@ -1,4 +1,9 @@
 import { Type } from "@sinclair/typebox";
+import {
+  assertSlideDirectoryVersion,
+  createSlideDirectorySnapshot,
+  resolveSlideIds,
+} from "../pptx/slide-directory";
 import { safeRun } from "../pptx/slide-zip";
 import { defineTool, toolError, toolSuccess } from "./types";
 
@@ -100,8 +105,47 @@ export const verifySlidesTool = defineTool({
   name: "verify_slides",
   label: "Verify Slides",
   description:
-    "Verify all slides for overlapping shapes, out-of-bounds positioning, and unused placeholders.",
+    "Verify slides for overlapping shapes and out-of-bounds positioning. " +
+    "Returns a compact issue list by default; set include_shapes=true for the " +
+    "legacy full geometry report.",
   parameters: Type.Object({
+    only_issues: Type.Optional(
+      Type.Boolean({
+        description:
+          "Return only overflow/overlap issues (default true). Set false for the legacy full shape report.",
+      }),
+    ),
+    include_shapes: Type.Optional(
+      Type.Boolean({
+        description:
+          "Include every shape's geometry. Default false; use only when needed.",
+      }),
+    ),
+    slide_indices: Type.Optional(
+      Type.Array(Type.Number(), {
+        description:
+          "Optional 0-based slide indices to verify; default all slides.",
+        maxItems: 200,
+      }),
+    ),
+    slide_ids: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          "Optional stable slide IDs from list_slides. Preferred over slide_indices.",
+        maxItems: 200,
+      }),
+    ),
+    directory_version: Type.Optional(
+      Type.String({
+        description:
+          "Directory version from list_slides. Stable IDs remain authoritative; index-only requests fail if this version is stale.",
+        minLength: 1,
+        maxLength: 80,
+      }),
+    ),
+    max_issues: Type.Optional(
+      Type.Number({ description: "Maximum issues returned. Default 100." }),
+    ),
     explanation: Type.Optional(
       Type.String({
         description: "Brief description (max 50 chars)",
@@ -109,11 +153,11 @@ export const verifySlidesTool = defineTool({
       }),
     ),
   }),
-  execute: async (_toolCallId, _params) => {
+  execute: async (_toolCallId, params) => {
     try {
       const result = await safeRun(async (context) => {
         const slides = context.presentation.slides;
-        slides.load("items");
+        slides.load("items/id");
 
         const pageSetup = context.presentation.pageSetup;
         pageSetup.load(["slideWidth", "slideHeight"]);
@@ -121,19 +165,111 @@ export const verifySlidesTool = defineTool({
 
         const slideWidth = pageSetup.slideWidth;
         const slideHeight = pageSetup.slideHeight;
-        const results: VerifyResult[] = [];
+        const directory = createSlideDirectorySnapshot(slides.items);
+        if (!params.slide_ids || params.slide_ids.length === 0) {
+          assertSlideDirectoryVersion(directory, params.directory_version);
+        }
+        const resolvedTargets = resolveSlideIds(
+          directory,
+          params.slide_ids,
+          params.slide_indices,
+        );
+        const results: Array<
+          VerifyResult & {
+            slideId: string;
+            slideIndex: number;
+            positionOneIndexed: number;
+          }
+        > = [];
+        const maxIssues = Math.min(
+          500,
+          Math.max(1, Math.floor(params.max_issues ?? 100)),
+        );
+        let issueCount = 0;
+        const targetSlideCount = resolvedTargets.ids.length;
 
-        for (const slide of slides.items) {
+        for (const slideId of resolvedTargets.ids) {
+          const slideIndex = directory.indexById.get(slideId) as number;
+          const slide = slides.getItem(slideId);
           const shapes = slide.shapes;
           shapes.load(
             "items/id,items/name,items/left,items/top,items/width,items/height",
           );
           await context.sync();
 
-          results.push(verifyShapes(shapes.items, slideWidth, slideHeight));
+          const verified = verifyShapes(shapes.items, slideWidth, slideHeight);
+          results.push({
+            ...verified,
+            slideId,
+            slideIndex,
+            positionOneIndexed: slideIndex + 1,
+          });
+          issueCount += verified.overflows.length + verified.overlaps.length;
         }
 
-        return { slides: results };
+        const onlyIssues = params.only_issues !== false;
+        if (!onlyIssues || params.include_shapes) {
+          let remainingIssues = maxIssues;
+          return {
+            schemaVersion: 2,
+            directoryVersion: directory.directoryVersion,
+            directoryChanged:
+              params.slide_ids !== undefined &&
+              params.directory_version !== undefined &&
+              params.directory_version !== directory.directoryVersion,
+            usedLegacyIndices: resolvedTargets.usedLegacyIndices,
+            relocated: resolvedTargets.relocatedIds.length > 0,
+            relocatedSlideIds: resolvedTargets.relocatedIds,
+            slides: results.map((slide) => {
+              const overflows = slide.overflows.slice(0, remainingIssues);
+              remainingIssues -= overflows.length;
+              const overlaps = slide.overlaps.slice(0, remainingIssues);
+              remainingIssues -= overlaps.length;
+              return { ...slide, overflows, overlaps };
+            }),
+            checkedSlideCount: results.length,
+            requestedSlideCount: targetSlideCount,
+            issueCount,
+            truncated: issueCount > maxIssues,
+          };
+        }
+
+        const issues = results.flatMap((slide) => [
+          ...slide.overflows.map((overflow) => ({
+            slideId: slide.slideId,
+            slideIndex: slide.slideIndex,
+            positionOneIndexed: slide.positionOneIndexed,
+            type: "overflow" as const,
+            shapeId: overflow.shape.id,
+            overflowBy: overflow.overflowBy,
+          })),
+          ...slide.overlaps.map((overlap) => ({
+            slideId: slide.slideId,
+            slideIndex: slide.slideIndex,
+            positionOneIndexed: slide.positionOneIndexed,
+            type: "overlap" as const,
+            shapeIds: [overlap.shapeA.id, overlap.shapeB.id],
+            overlapX: overlap.overlapX,
+            overlapY: overlap.overlapY,
+          })),
+        ]);
+        return {
+          schemaVersion: 2,
+          directoryVersion: directory.directoryVersion,
+          directoryChanged:
+            params.slide_ids !== undefined &&
+            params.directory_version !== undefined &&
+            params.directory_version !== directory.directoryVersion,
+          usedLegacyIndices: resolvedTargets.usedLegacyIndices,
+          relocated: resolvedTargets.relocatedIds.length > 0,
+          relocatedSlideIds: resolvedTargets.relocatedIds,
+          onlyIssues: true,
+          checkedSlideCount: results.length,
+          requestedSlideCount: targetSlideCount,
+          issueCount,
+          issues: issues.slice(0, maxIssues),
+          truncated: issueCount > maxIssues,
+        };
       });
 
       return toolSuccess({ success: true, result });

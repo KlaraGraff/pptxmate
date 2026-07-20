@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Task-aware context routing** — Text-only requests now use a compact system prompt and minimal presentation metadata instead of loading theme, master, geometry, font, and color data on every turn.
+- **Compact text workflow** — Added paginated `read_slide_texts`, plain-text modes for `read_slide_text` / `edit_slide_text`, and batched `update_slide_text` for translation and wording changes without an OOXML round trip.
+- **Layered deck reads** — Added a content-free `list_slides` directory and bounded `read_slides` text previews (25 slides, 240 characters per slide by default) before detailed single-slide reads.
+- **Guarded paged text writes** — Long text boxes can now be read and written by paragraph/character range using shared cursors and optimistic text hashes, avoiding one oversized model tool call and stale-offset edits.
+- **Clipboard image attachments** — PNG, JPEG, GIF, WebP, and BMP images can be pasted directly into the chat composer. Each pasted image receives a unique VFS filename so repeated pastes do not overwrite an earlier attachment; ordinary text paste behavior is unchanged.
+- **Stable slide targeting** — Slide reads and writes now prefer PowerPoint's stable `slide_id`, treat `slide_index` as a current-position hint only, and return a lightweight directory version plus relocation/replacement metadata after structural changes.
+- **Optional CC Switch integration** — The local PowerPoint server proxies `/v1` to CC Switch, defaults to `http://127.0.0.1:15721`, and supports configurable or disabled routing without storing account credentials in PPTXMate.
+
+### Changed
+
+- **Bounded tool output** — PowerPoint text/tool results now enforce response budgets, expose offsets/continuation hints, and keep verification output issues-only unless full shape geometry is explicitly requested.
+- **Tool-schema routing** — Text and discovery requests expose only their allowlisted tools; full Office.js/OOXML schemas are loaded only for explicit design, structure, creation, verification, or specialized container work.
+- **Context recovery** — Only the latest `<ppt_context>` snapshot is retained, old PowerPoint tool payloads are compacted before provider calls, and length/context-limit responses are automatically continued up to two times. Mutation receipts now preserve completed writes, block exact replays, and require a matching targeted verifier before continuing uncertain text/layout/structure writes; arbitrary mutations remain fail-closed.
+- **Structure refresh** — Adding, deleting, moving, duplicating, or re-importing a slide refreshes only the ID/order directory. Index-only calls with a stale directory stop before mutation, while ID-bound calls relocate to the target's current position without rereading fonts, colors, geometry, or slide content.
+- **Office requirement** — The manifest now requires PowerPointApi 1.10 so null-object text-frame reads are reliable across every shape type.
+
 ## [0.0.6] - 2026-05-12
 
 ### Changed

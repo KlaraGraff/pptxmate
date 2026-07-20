@@ -1,6 +1,10 @@
 <script lang="ts">
-  import { Paperclip, Send, Square, X } from "lucide-svelte";
+  import { FileImage, Paperclip, Send, Square, X } from "lucide-svelte";
   import { getChatContext } from "./chat-runtime-context";
+  import {
+    extractClipboardImages,
+    isImageFilename,
+  } from "./clipboard-images";
 
   const LINE_HEIGHT = 20;
   const MIN_ROWS = 1;
@@ -12,6 +16,7 @@
   let input = $state("");
   let textareaRef: HTMLTextAreaElement | null = null;
   let fileInputRef: HTMLInputElement | null = null;
+  let isProcessingFiles = $state(false);
 
   function formatFileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes}B`;
@@ -32,12 +37,26 @@
 
   async function handleSubmit() {
     const trimmed = input.trim();
-    if (!trimmed || $runtimeState.isStreaming) return;
-
     const attachmentNames = $runtimeState.uploads.map((upload) => upload.name);
+    if (
+      (trimmed.length === 0 && attachmentNames.length === 0) ||
+      $runtimeState.isStreaming ||
+      $runtimeState.isUploading ||
+      isProcessingFiles
+    ) {
+      return;
+    }
+
+    const message =
+      trimmed ||
+      (attachmentNames.every(isImageFilename)
+        ? attachmentNames.length === 1
+          ? "Please inspect the attached image."
+          : "Please inspect the attached images."
+        : "Please inspect the attached file.");
     input = "";
     await chat.sendMessage(
-      trimmed,
+      message,
       attachmentNames.length > 0 ? attachmentNames : undefined,
     );
   }
@@ -47,9 +66,38 @@
     const files = target.files;
     if (!files || files.length === 0) return;
 
-    await chat.processFiles(Array.from(files));
-    if (fileInputRef) {
-      fileInputRef.value = "";
+    isProcessingFiles = true;
+    try {
+      await chat.processFiles(Array.from(files));
+    } finally {
+      isProcessingFiles = false;
+      if (fileInputRef) {
+        fileInputRef.value = "";
+      }
+    }
+  }
+
+  async function handlePaste(event: ClipboardEvent) {
+    if (
+      isProcessingFiles ||
+      $runtimeState.isUploading ||
+      $runtimeState.isStreaming
+    ) {
+      return;
+    }
+
+    const files = extractClipboardImages(
+      event.clipboardData,
+      $runtimeState.uploads.map((upload) => upload.name),
+    );
+    if (files.length === 0) return;
+
+    event.preventDefault();
+    isProcessingFiles = true;
+    try {
+      await chat.processFiles(files);
+    } finally {
+      isProcessingFiles = false;
     }
   }
 
@@ -76,6 +124,9 @@
           class="flex items-center gap-1 px-2 py-1 text-[10px] bg-(--chat-bg-secondary) border border-(--chat-border) text-(--chat-text-secondary)"
           style="border-radius: var(--chat-radius)"
         >
+          {#if isImageFilename(file.name)}
+            <FileImage size={11} class="shrink-0 text-(--chat-accent)" />
+          {/if}
           <span class="max-w-[120px] truncate" title={file.name}>
             {file.name}
           </span>
@@ -114,6 +165,7 @@
       bind:this={textareaRef}
       bind:value={input}
       oninput={autoResize}
+      onpaste={handlePaste}
       onkeydown={(event) => {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault();
@@ -132,13 +184,19 @@
       <button
         type="button"
         onclick={() => fileInputRef?.click()}
-        disabled={$runtimeState.isUploading || $runtimeState.isStreaming}
+        disabled={
+          isProcessingFiles ||
+          $runtimeState.isUploading ||
+          $runtimeState.isStreaming
+        }
         class="flex items-center justify-center w-6 h-5 text-(--chat-text-muted) hover:text-(--chat-text-primary) disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         title="Upload files"
       >
         <Paperclip
           size={13}
-          class={$runtimeState.isUploading ? "animate-pulse" : ""}
+          class={isProcessingFiles || $runtimeState.isUploading
+            ? "animate-pulse"
+            : ""}
         />
       </button>
 
@@ -155,7 +213,12 @@
         <button
           type="button"
           onclick={handleSubmit}
-          disabled={!$runtimeState.providerConfig || !input.trim()}
+          disabled={
+            !$runtimeState.providerConfig ||
+            (!input.trim() && $runtimeState.uploads.length === 0) ||
+            $runtimeState.isUploading ||
+            isProcessingFiles
+          }
           class="flex items-center justify-center w-6 h-5 text-(--chat-text-muted) hover:text-(--chat-text-primary) disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
           <Send size={13} />

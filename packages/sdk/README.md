@@ -2,6 +2,8 @@
 
 Headless SDK for building AI-powered Microsoft Office Add-ins. Provides an agent runtime, tool system, virtual filesystem, session storage, and multi-provider LLM integration — all running in the browser.
 
+PPTXMate retains the upstream `@office-agents/sdk` package name for compatibility. This repository does not republish the inherited package under that npm scope.
+
 > **Browser-only** — this package targets browser environments (Office Add-ins, SPAs). It uses IndexedDB, localStorage, and the DOM.
 
 ## Install
@@ -357,13 +359,36 @@ const snippets = ctx.commandSnippets; // string[]
 
 - **`tools`** — `AgentTool[]` or `(ctx: AgentContext) => AgentTool[]`.
 - **`buildSystemPrompt(skills, commandSnippets)`** — Build the system prompt.
+- **`toolsForMessage?(message, ctx, info)`** — Return a per-message tool allowlist; `info.priorUserMessages` comes from the active session.
+- **`buildSystemPromptForMessage?(message, skills, commands, info)`** — Build a task-aware prompt using the same session-scoped preparation info.
 - **`getDocumentId()`** — Return a unique document ID for session scoping.
 - **`staticFiles?`** — Files to mount in VFS (applied during `init()`).
 - **`customCommands?`** — Custom command factory (applied during `init()`).
-- **`getDocumentMetadata?`** — Inject context metadata into each prompt.
+- **`getDocumentMetadata?`** — Inject context metadata into each prompt; receives the user request, abort signal, and message preparation info.
+- **`transformContext?`** — Compact the provider-facing transcript without mutating persisted session history.
+- **`getToolRecoveryInfo?`** / **`normalizeToolArgsForReplay?`** — Classify mutations and normalize replay identity for interruption-safe recovery.
 - **`onToolResult?`** — React to tool results.
 - **`metadataTag?`** — XML tag name for metadata injection.
 - **`storageNamespace?`** — Override default storage namespace.
+
+### Per-message routing and context
+
+`toolsForMessage` and `buildSystemPromptForMessage` run for each real user request, so an app can classify that request and expose only the relevant tool schemas and instructions. `MessagePreparationInfo.priorUserMessages` contains prior real requests from the active session and excludes hidden runtime continuation/recovery messages.
+
+`transformContext(messages, signal, info)` runs immediately before a provider request. It may return a compact provider-facing transcript based on the model context window, system-prompt size, and recovery attempt. The returned transcript does not replace the messages persisted in the session, so UI history and subsequent user turns remain intact.
+
+### Interruption and limit recovery
+
+`getToolRecoveryInfo(toolName, args)` returns a `ToolRecoveryInfo` with:
+
+- `effect`: `read`, `write`, or `unknown`.
+- `mutationKind`: `text`, `layout`, `structure`, or `arbitrary` for a possible write.
+- `verificationKinds`: mutation kinds that a read can verify.
+- `scope`: compact non-content identity such as `slide_id` and `shape_id`.
+
+Write tools should include a structured `mutationState` in their result: `not_started` means no mutation occurred and retry is allowed, `completed` means the receipt is authoritative and replay is blocked, and `uncertain` means the write may have landed and targeted verification is required before another write. `normalizeToolArgsForReplay` can make equivalent calls share the same replay identity.
+
+For a response stopped by the model's output limit, the runtime automatically continues up to two times. For a context overflow, it calls `transformContext` and automatically retries or enters mutation-aware recovery up to two times. If either limit remains after those attempts, the session is preserved: the user can send “continue” or a narrower request in the same conversation instead of creating a new one.
 
 ### Tools
 
@@ -408,7 +433,7 @@ const snippets = ctx.commandSnippets; // string[]
 ## Used By
 
 - **[@office-agents/excel](https://github.com/hewliyang/office-agents/tree/main/packages/excel)** — Excel Add-in with AI chat
-- **[@office-agents/powerpoint](https://github.com/hewliyang/office-agents/tree/main/packages/powerpoint)** — PowerPoint Add-in with AI chat
+- **[PPTXMate PowerPoint Add-in](https://github.com/KlaraGraff/pptxmate/tree/main/packages/powerpoint)** — Token-efficient PowerPoint AI add-in using the retained `@office-agents/powerpoint` workspace package name
 - **[@office-agents/word](https://github.com/hewliyang/office-agents/tree/main/packages/word)** — Word Add-in with AI chat
 
 ## License

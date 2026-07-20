@@ -5,7 +5,8 @@ import {
   type StorageNamespace,
 } from "@office-agents/core";
 import { defineCommand } from "just-bash/browser";
-import { safeRun, withSlideZip } from "../pptx/slide-zip";
+import type { SlideTargetReference } from "../pptx/slide-directory";
+import { type SlideZipResult, safeRun, withSlideZip } from "../pptx/slide-zip";
 
 async function resolveVfsPath(
   ctx: { cwd: string; fs: { readFileBuffer(p: string): Promise<Uint8Array> } },
@@ -29,6 +30,7 @@ const IMAGE_REL_TYPE =
 
 const EMU_PER_INCH = 914400;
 const EMU_PER_CM = 360000;
+const EMU_PER_POINT = 12700;
 const DEFAULT_IMAGE_BOX_PT = { width: 360, height: 270 };
 const DEFAULT_ICON_BOX_PT = { width: 72, height: 72 };
 
@@ -41,9 +43,22 @@ function parseUnit(value: number, unit: string): number {
     case "emu":
       return Math.round(value);
     case "pt":
-      return Math.round(value * 12700);
+      return Math.round(value * EMU_PER_POINT);
     default:
       return Math.round(value * EMU_PER_INCH);
+  }
+}
+
+function pointsToUnit(value: number, unit: string): number {
+  switch (unit) {
+    case "in":
+      return value / 72;
+    case "cm":
+      return (value * 2.54) / 72;
+    case "emu":
+      return value * EMU_PER_POINT;
+    default:
+      return value;
   }
 }
 
@@ -235,7 +250,7 @@ async function rasterizeSvgToPng(
 }
 
 interface InsertImageParams {
-  slideIndex: number;
+  target: SlideTargetReference;
   data: Uint8Array;
   mime: string;
   ext: string;
@@ -247,8 +262,141 @@ interface InsertImageParams {
   mediaPrefix?: string;
 }
 
-async function insertImageIntoSlide(params: InsertImageParams): Promise<void> {
-  const { slideIndex, data, ext, mime, shapeName, offX, offY, cx, cy } = params;
+interface InsertedShapeResult {
+  shapeId: string;
+  shapeName: string;
+}
+
+type InsertImageZipResult = SlideZipResult<InsertedShapeResult>;
+
+class CommandInputError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CommandInputError";
+  }
+}
+
+function parseCommandSlideTarget(
+  slideArg: string | undefined,
+  flags: Record<string, string>,
+): { target: SlideTargetReference; requestedPositionOneIndexed?: number } {
+  const slideId = flags["slide-id"] ?? flags.slide_id;
+  const directoryVersion =
+    flags["directory-version"] ?? flags.directory_version;
+  let requestedPositionOneIndexed: number | undefined;
+  if (slideArg !== undefined) {
+    if (!/^\d+$/.test(slideArg)) {
+      throw new CommandInputError(
+        "INVALID_SLIDE_TARGET",
+        "Slide must be a positive number (1-based).",
+      );
+    }
+    requestedPositionOneIndexed = Number.parseInt(slideArg, 10);
+    if (requestedPositionOneIndexed < 1) {
+      throw new CommandInputError(
+        "INVALID_SLIDE_TARGET",
+        "Slide must be a positive number (1-based).",
+      );
+    }
+  }
+  if (!slideId && requestedPositionOneIndexed === undefined) {
+    throw new CommandInputError(
+      "SLIDE_TARGET_REQUIRED",
+      "Provide --slide-id=<ID> from list_slides or a legacy 1-based slide number.",
+    );
+  }
+  return {
+    target: {
+      ...(slideId ? { slide_id: slideId } : {}),
+      ...(requestedPositionOneIndexed === undefined
+        ? {}
+        : { slide_index: requestedPositionOneIndexed - 1 }),
+      ...(directoryVersion ? { directory_version: directoryVersion } : {}),
+    },
+    requestedPositionOneIndexed,
+  };
+}
+
+function structuredCommandFailure(
+  operation: "insert-image" | "insert-icon",
+  error: unknown,
+  fallbackCode: string,
+) {
+  const record =
+    error && typeof error === "object"
+      ? (error as Record<string, unknown>)
+      : {};
+  const message = error instanceof Error ? error.message : String(error);
+  const code = typeof record.code === "string" ? record.code : fallbackCode;
+  const mutationCompleted = record.mutationCompleted === true;
+  const receipt: Record<string, unknown> = {
+    success: false,
+    operation,
+    mutationCompleted,
+    mutationState: mutationCompleted ? "uncertain" : "not_started",
+    error: { code, message },
+    mutation: {
+      kind: "slide-content",
+      status: mutationCompleted ? "uncertain" : "not_started",
+      mutationCompleted,
+    },
+  };
+  for (const [source, destination] of [
+    ["expectedVersion", "expectedDirectoryVersion"],
+    ["currentVersion", "currentDirectoryVersion"],
+    ["temporarySlideId", "temporarySlideId"],
+  ] as const) {
+    if (typeof record[source] === "string") {
+      receipt[destination] = record[source];
+    }
+  }
+  return {
+    stdout: JSON.stringify(receipt),
+    stderr: "",
+    exitCode: 1,
+  };
+}
+
+function buildInsertReceipt(
+  operation: "insert-image" | "insert-icon",
+  zipResult: InsertImageZipResult,
+  details: Record<string, unknown>,
+): Record<string, unknown> {
+  const mutationCompleted = zipResult.replacementSlideId !== null;
+  return {
+    success: true,
+    operation,
+    mutationCompleted,
+    mutationState: mutationCompleted ? "completed" : "not_started",
+    originalSlideId: zipResult.originalSlideId,
+    slideId: zipResult.slideId,
+    replacementSlideId: zipResult.replacementSlideId,
+    slideIndex: zipResult.slideIndex,
+    positionOneIndexed: zipResult.slideIndex + 1,
+    directoryVersion: zipResult.directoryVersion,
+    directoryChanged: zipResult.directoryChanged,
+    inputDirectoryChanged: zipResult.inputDirectoryChanged,
+    relocated: zipResult.relocated,
+    usedLegacyIndex: zipResult.usedLegacyIndex,
+    shapeId: zipResult.result.shapeId,
+    shapeName: zipResult.result.shapeName,
+    mutation: {
+      kind: "slide-content",
+      status: mutationCompleted ? "completed" : "not_applied",
+      mutationCompleted,
+      replacedSlide: mutationCompleted,
+    },
+    ...details,
+  };
+}
+
+async function insertImageIntoSlide(
+  params: InsertImageParams,
+): Promise<InsertImageZipResult> {
+  const { target, data, ext, mime, shapeName, offX, offY, cx, cy } = params;
   const prefix =
     params.mediaPrefix || `vfs_image_${Date.now()}_${crypto.randomUUID()}`;
   const isSvg = ext === "svg";
@@ -260,8 +408,8 @@ async function insertImageIntoSlide(params: InsertImageParams): Promise<void> {
     pngFallback = await rasterizeSvgToPng(data, pxW, pxH);
   }
 
-  await safeRun(async (context) => {
-    await withSlideZip(context, slideIndex, async ({ zip, markDirty }) => {
+  return safeRun(async (context) => {
+    return withSlideZip(context, target, async ({ zip, markDirty }) => {
       const relsPath = "ppt/slides/_rels/slide1.xml.rels";
       const relsFile = zip.file(relsPath);
       let relsXml: string;
@@ -405,13 +553,14 @@ async function insertImageIntoSlide(params: InsertImageParams): Promise<void> {
       }
 
       markDirty();
+      return { shapeId: String(shapeId), shapeName };
     });
   });
 }
 
 const insertImageCmd: DescribedCommand = {
   promptSnippet:
-    "- insert-image <file> <slide> [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--name=NAME] — Insert a VFS image onto a slide (1-based slide number, default box 360×270 pt at origin, preserves aspect ratio)",
+    "- insert-image <file> [<slide>] [--slide-id=ID] [--directory-version=VERSION] [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--name=NAME] — Insert a VFS image using a stable slide ID (preferred) or legacy 1-based slide number; returns a JSON mutation receipt",
   command: {
     name: "insert-image",
     load: async () =>
@@ -419,7 +568,7 @@ const insertImageCmd: DescribedCommand = {
         const flags: Record<string, string> = {};
         const positional: string[] = [];
         for (const arg of args) {
-          const match = arg.match(/^--(\w+)=(.+)$/);
+          const match = arg.match(/^--([\w-]+)=(.+)$/);
           if (match) {
             flags[match[1]] = match[2];
           } else {
@@ -427,63 +576,46 @@ const insertImageCmd: DescribedCommand = {
           }
         }
 
-        if (positional.length < 2) {
-          return {
-            stdout: "",
-            stderr:
-              "Usage: insert-image <file> <slide> [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--name=SHAPE_NAME]\n" +
-              "  file    - Path to image file in VFS (PNG, JPEG, GIF, BMP, SVG, WEBP)\n" +
-              "  slide   - 1-based slide number\n" +
-              "  --x     - Horizontal position from left edge (default: 0)\n" +
-              "  --y     - Vertical position from top edge (default: 0)\n" +
-              "  --width - Image width (default box width: 360pt)\n" +
-              "  --height- Image height (default box height: 270pt)\n" +
-              "  --unit  - Unit: pt (default), in, cm, emu\n" +
-              "  --name  - Shape name (default: image filename)\n",
-            exitCode: 1,
-          };
-        }
-
-        const [filePath, slideArg] = positional;
-        const slideNum = Number.parseInt(slideArg, 10);
-        if (Number.isNaN(slideNum) || slideNum < 1) {
-          return {
-            stdout: "",
-            stderr: "Slide must be a positive number (1-based)",
-            exitCode: 1,
-          };
-        }
-        const slideIndex = slideNum - 1;
-
-        const unit = flags.unit || "pt";
-        if (!["in", "cm", "pt", "emu"].includes(unit)) {
-          return {
-            stdout: "",
-            stderr: "Unit must be one of: in, cm, pt, emu",
-            exitCode: 1,
-          };
-        }
-
-        const x = flags.x ? Number.parseFloat(flags.x) : 0;
-        const y = flags.y ? Number.parseFloat(flags.y) : 0;
-        const width = flags.width ? Number.parseFloat(flags.width) : undefined;
-        const height = flags.height
-          ? Number.parseFloat(flags.height)
-          : undefined;
-        const widthProvided = width !== undefined;
-        const heightProvided = height !== undefined;
-
-        if (
-          [x, y, width, height].some((v) => v !== undefined && Number.isNaN(v))
-        ) {
-          return {
-            stdout: "",
-            stderr: "x, y, width, height must be valid numbers",
-            exitCode: 1,
-          };
-        }
-
         try {
+          if (positional.length < 1 || positional.length > 2) {
+            throw new CommandInputError(
+              "INVALID_ARGUMENTS",
+              "Usage: insert-image <file> [<slide>] [--slide-id=ID] [--directory-version=VERSION] [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--name=SHAPE_NAME]",
+            );
+          }
+          const [filePath, slideArg] = positional;
+          const { target } = parseCommandSlideTarget(slideArg, flags);
+          const unit = flags.unit || "pt";
+          if (!["in", "cm", "pt", "emu"].includes(unit)) {
+            throw new CommandInputError(
+              "INVALID_UNIT",
+              "Unit must be one of: in, cm, pt, emu.",
+            );
+          }
+
+          const x = flags.x ? Number.parseFloat(flags.x) : 0;
+          const y = flags.y ? Number.parseFloat(flags.y) : 0;
+          const width = flags.width
+            ? Number.parseFloat(flags.width)
+            : undefined;
+          const height = flags.height
+            ? Number.parseFloat(flags.height)
+            : undefined;
+          const widthProvided = width !== undefined;
+          const heightProvided = height !== undefined;
+          if (
+            [x, y, width, height].some(
+              (value) => value !== undefined && !Number.isFinite(value),
+            ) ||
+            (width !== undefined && width <= 0) ||
+            (height !== undefined && height <= 0)
+          ) {
+            throw new CommandInputError(
+              "INVALID_DIMENSIONS",
+              "x and y must be finite numbers; width and height must be positive finite numbers.",
+            );
+          }
+
           const data = await resolveVfsPath(ctx, filePath);
           const { mime, ext } = detectMimeType(filePath, data);
           const fileName = filePath.split("/").pop() || "image";
@@ -495,12 +627,12 @@ const insertImageCmd: DescribedCommand = {
             requestedHeight: height,
             widthProvided,
             heightProvided,
-            defaultWidth: DEFAULT_IMAGE_BOX_PT.width,
-            defaultHeight: DEFAULT_IMAGE_BOX_PT.height,
+            defaultWidth: pointsToUnit(DEFAULT_IMAGE_BOX_PT.width, unit),
+            defaultHeight: pointsToUnit(DEFAULT_IMAGE_BOX_PT.height, unit),
           });
 
-          await insertImageIntoSlide({
-            slideIndex,
+          const zipResult = await insertImageIntoSlide({
+            target,
             data,
             mime,
             ext,
@@ -511,14 +643,26 @@ const insertImageCmd: DescribedCommand = {
             cy: parseUnit(resolvedSize.height, unit),
           });
 
+          const receipt = buildInsertReceipt("insert-image", zipResult, {
+            source: filePath,
+            mimeType: mime,
+            x,
+            y,
+            width: resolvedSize.width,
+            height: resolvedSize.height,
+            unit,
+          });
           return {
-            stdout: `Inserted ${fileName} on slide ${slideNum} at (${x}, ${y}) size ${resolvedSize.width}×${resolvedSize.height} ${unit}`,
+            stdout: JSON.stringify(receipt),
             stderr: "",
             exitCode: 0,
           };
         } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return { stdout: "", stderr: msg, exitCode: 1 };
+          return structuredCommandFailure(
+            "insert-image",
+            error,
+            "INSERT_IMAGE_FAILED",
+          );
         }
       }),
   },
@@ -626,7 +770,7 @@ const searchIconsCmd: DescribedCommand = {
 
           lines.push(
             "\nUse insert-icon to place an icon on a slide:",
-            "  insert-icon <icon_id> <slide> [--x=N] [--y=N] [--width=N] [--height=N] [--color=#HEX]",
+            "  insert-icon <icon_id> --slide-id=<ID> [--directory-version=<VERSION>] [--x=N] [--y=N] [--width=N] [--height=N] [--color=#HEX]",
           );
 
           return { stdout: lines.join("\n"), stderr: "", exitCode: 0 };
@@ -640,7 +784,7 @@ const searchIconsCmd: DescribedCommand = {
 
 const insertIconCmd: DescribedCommand = {
   promptSnippet:
-    "- insert-icon <icon_id> <slide> [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--color=#HEX] [--name=NAME] — Insert a vector icon onto a slide as SVG with PNG fallback (default box 72×72 pt, preserves aspect ratio)",
+    "- insert-icon <icon_id> [<slide>] [--slide-id=ID] [--directory-version=VERSION] [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--color=#HEX] [--name=NAME] — Insert a vector icon using a stable slide ID (preferred) or legacy 1-based slide number; returns a JSON mutation receipt",
   command: {
     name: "insert-icon",
     load: async () =>
@@ -648,7 +792,7 @@ const insertIconCmd: DescribedCommand = {
         const flags: Record<string, string> = {};
         const positional: string[] = [];
         for (const arg of args) {
-          const match = arg.match(/^--(\w+)=(.+)$/);
+          const match = arg.match(/^--([\w-]+)=(.+)$/);
           if (match) {
             flags[match[1]] = match[2];
           } else {
@@ -656,73 +800,53 @@ const insertIconCmd: DescribedCommand = {
           }
         }
 
-        if (positional.length < 2) {
-          return {
-            stdout: "",
-            stderr:
-              "Usage: insert-icon <icon_id> <slide> [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--color=#HEX] [--name=SHAPE_NAME]\n" +
-              "  icon_id  - Icon ID from search-icons (e.g. 'mdi:alert', 'fluent:warning-24-filled')\n" +
-              "  slide    - 1-based slide number\n" +
-              "  --x      - Horizontal position from left edge (default: 0)\n" +
-              "  --y      - Vertical position from top edge (default: 0)\n" +
-              "  --width  - Icon width (default box width: 72pt)\n" +
-              "  --height - Icon height (default box height: 72pt)\n" +
-              "  --unit   - Unit: pt (default), in, cm, emu\n" +
-              "  --color  - Icon color as hex (e.g. '#FF5733'). Only works on mono icons.\n" +
-              "  --name   - Shape name (default: icon ID)\n",
-            exitCode: 1,
-          };
-        }
-
-        const [iconId, slideArg] = positional;
-        const slideNum = Number.parseInt(slideArg, 10);
-        if (Number.isNaN(slideNum) || slideNum < 1) {
-          return {
-            stdout: "",
-            stderr: "Slide must be a positive number (1-based)",
-            exitCode: 1,
-          };
-        }
-
-        const parts = iconId.split(":");
-        if (parts.length !== 2) {
-          return {
-            stdout: "",
-            stderr:
-              'Icon ID must be in "prefix:name" format (e.g. "mdi:alert"). Use search-icons to find icons.',
-            exitCode: 1,
-          };
-        }
-
-        const unit = flags.unit || "pt";
-        if (!["in", "cm", "pt", "emu"].includes(unit)) {
-          return {
-            stdout: "",
-            stderr: "Unit must be one of: in, cm, pt, emu",
-            exitCode: 1,
-          };
-        }
-
-        const x = flags.x ? Number.parseFloat(flags.x) : 0;
-        const y = flags.y ? Number.parseFloat(flags.y) : 0;
-        const width = flags.width ? Number.parseFloat(flags.width) : undefined;
-        const height = flags.height
-          ? Number.parseFloat(flags.height)
-          : undefined;
-        const widthProvided = width !== undefined;
-        const heightProvided = height !== undefined;
-
-        if (
-          [x, y, width, height].some((v) => v !== undefined && Number.isNaN(v))
-        ) {
-          return {
-            stdout: "",
-            stderr: "x, y, width, height must be valid numbers",
-            exitCode: 1,
-          };
-        }
-
         try {
+          if (positional.length < 1 || positional.length > 2) {
+            throw new CommandInputError(
+              "INVALID_ARGUMENTS",
+              "Usage: insert-icon <icon_id> [<slide>] [--slide-id=ID] [--directory-version=VERSION] [--x=N] [--y=N] [--width=N] [--height=N] [--unit=pt|in|cm|emu] [--color=#HEX] [--name=SHAPE_NAME]",
+            );
+          }
+          const [iconId, slideArg] = positional;
+          const { target } = parseCommandSlideTarget(slideArg, flags);
+          const parts = iconId.split(":");
+          if (parts.length !== 2 || parts.some((part) => part.length === 0)) {
+            throw new CommandInputError(
+              "INVALID_ICON_ID",
+              'Icon ID must be in "prefix:name" format (e.g. "mdi:alert"). Use search-icons to find icons.',
+            );
+          }
+
+          const unit = flags.unit || "pt";
+          if (!["in", "cm", "pt", "emu"].includes(unit)) {
+            throw new CommandInputError(
+              "INVALID_UNIT",
+              "Unit must be one of: in, cm, pt, emu.",
+            );
+          }
+          const x = flags.x ? Number.parseFloat(flags.x) : 0;
+          const y = flags.y ? Number.parseFloat(flags.y) : 0;
+          const width = flags.width
+            ? Number.parseFloat(flags.width)
+            : undefined;
+          const height = flags.height
+            ? Number.parseFloat(flags.height)
+            : undefined;
+          const widthProvided = width !== undefined;
+          const heightProvided = height !== undefined;
+          if (
+            [x, y, width, height].some(
+              (value) => value !== undefined && !Number.isFinite(value),
+            ) ||
+            (width !== undefined && width <= 0) ||
+            (height !== undefined && height <= 0)
+          ) {
+            throw new CommandInputError(
+              "INVALID_DIMENSIONS",
+              "x and y must be finite numbers; width and height must be positive finite numbers.",
+            );
+          }
+
           const [prefix, name] = parts;
           const svgUrl = new URL(`${ICONIFY_API}/${prefix}/${name}.svg`);
           if (flags.color) {
@@ -752,12 +876,12 @@ const insertIconCmd: DescribedCommand = {
             requestedHeight: height,
             widthProvided,
             heightProvided,
-            defaultWidth: DEFAULT_ICON_BOX_PT.width,
-            defaultHeight: DEFAULT_ICON_BOX_PT.height,
+            defaultWidth: pointsToUnit(DEFAULT_ICON_BOX_PT.width, unit),
+            defaultHeight: pointsToUnit(DEFAULT_ICON_BOX_PT.height, unit),
           });
 
-          await insertImageIntoSlide({
-            slideIndex: slideNum - 1,
+          const zipResult = await insertImageIntoSlide({
+            target,
             data: svgData,
             mime: "image/svg+xml",
             ext: "svg",
@@ -769,15 +893,26 @@ const insertIconCmd: DescribedCommand = {
             mediaPrefix: `icon_${mediaCount}`,
           });
 
-          const colorInfo = flags.color ? ` (color: ${flags.color})` : "";
+          const receipt = buildInsertReceipt("insert-icon", zipResult, {
+            iconId,
+            color: flags.color ?? null,
+            x,
+            y,
+            width: resolvedSize.width,
+            height: resolvedSize.height,
+            unit,
+          });
           return {
-            stdout: `Inserted icon "${iconId}" on slide ${slideNum} at (${x}, ${y}) size ${resolvedSize.width}×${resolvedSize.height} ${unit}${colorInfo}`,
+            stdout: JSON.stringify(receipt),
             stderr: "",
             exitCode: 0,
           };
         } catch (error) {
-          const msg = error instanceof Error ? error.message : String(error);
-          return { stdout: "", stderr: msg, exitCode: 1 };
+          return structuredCommandFailure(
+            "insert-icon",
+            error,
+            "INSERT_ICON_FAILED",
+          );
         }
       }),
   },

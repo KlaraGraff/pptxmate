@@ -93,7 +93,7 @@ function deriveSessionName(agentMessages: AgentMessage[]): string | null {
 
 export function getSessionMessageCount(session: ChatSession): number {
   return (session.agentMessages ?? []).filter(
-    (m) => m.role === "user" || m.role === "assistant",
+    (m) => m.role === "assistant" || extractUserText(m) !== null,
   ).length;
 }
 

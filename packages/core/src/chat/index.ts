@@ -5,7 +5,11 @@ export type {
 } from "@office-agents/sdk";
 export type {
   AppAdapter,
+  ContextTransformInfo,
   CustomCommandsResult,
+  DocumentMetadata,
+  DocumentMetadataRequest,
+  MessagePreparationInfo,
   StorageNamespace,
   ToolExtrasProps,
 } from "./app-adapter";

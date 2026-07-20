@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">PPTXMate slide routing mark</title>
+  <rect width="128" height="128" rx="24" fill="#20262E"/>
+  <rect x="22" y="18" width="74" height="88" rx="9" fill="#F4F7F8" stroke="#FFFFFF" stroke-width="4"/>
+  <rect x="34" y="31" width="50" height="10" rx="5" fill="#E65A4F"/>
+  <rect x="34" y="49" width="36" height="7" rx="3.5" fill="#AEB8BE"/>
+  <rect x="34" y="62" width="28" height="7" rx="3.5" fill="#AEB8BE"/>
+  <path d="M49 85H73V73L99 91L73 109V97H49Z" fill="#20A39E" stroke="#20262E" stroke-width="4" stroke-linejoin="round"/>
+</svg>

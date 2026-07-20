@@ -49,8 +49,14 @@ export {
 // Runtime
 export {
   AgentRuntime,
+  type MessagePreparationInfo,
+  type RecoveryKind,
+  type RecoveryMutation,
+  type RecoveryPromptInput,
   type RuntimeAdapter,
   type RuntimeState,
+  type ToolEffect,
+  type ToolRecoveryInfo,
   type UploadedFile,
 } from "./runtime";
 // Sandbox
