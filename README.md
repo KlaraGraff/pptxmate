@@ -1,8 +1,8 @@
 # PPTXMate
 
-PPTXMate is an open-source PowerPoint AI assistant and Office add-in for reading, editing, translating, and automating PPT/PPTX presentations with less model context and fewer unnecessary tokens.
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
-PPTXMate 是一个开源 PowerPoint AI 插件，支持按需读取幻灯片、文本修改与翻译、稳定页面定位、图片粘贴和长任务恢复。
+PPTXMate is an open-source PowerPoint AI assistant and Office add-in for reading, editing, translating, and automating PPT/PPTX presentations with less model context and fewer unnecessary tokens.
 
 > PPTXMate is an independent project. It is not affiliated with or endorsed by Microsoft.
 
