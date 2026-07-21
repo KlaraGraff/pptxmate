@@ -3,6 +3,7 @@
   import { Loader2 } from "lucide-svelte";
   import { tick } from "svelte";
   import { getChatContext } from "./chat-runtime-context";
+  import { locale, t } from "./i18n";
   import MarkdownContent from "./markdown-content.svelte";
   import ThinkingBlock from "./thinking-block.svelte";
   import ToolCallBlock from "./tool-call-block.svelte";
@@ -113,10 +114,10 @@
     style="font-family: var(--chat-font-mono)"
   >
     <div class="text-(--chat-text-muted) text-xs uppercase tracking-widest mb-2">
-      no messages
+      {t($locale, "chat.noMessages")}
     </div>
     <div class="text-(--chat-text-secondary) text-sm max-w-[200px]">
-      {adapter.emptyStateMessage || "Start a conversation to get started"}
+      {adapter.emptyStateMessage || t($locale, "chat.empty")}
     </div>
   </div>
 {:else}
@@ -156,7 +157,7 @@
         style="font-family: var(--chat-font-mono)"
       >
         <Loader2 size={14} class="animate-spin" />
-        <span>thinking...</span>
+        <span>{t($locale, "chat.thinking")}</span>
       </div>
     {/if}
   </div>

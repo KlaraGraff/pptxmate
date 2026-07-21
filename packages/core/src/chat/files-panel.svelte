@@ -11,6 +11,7 @@
   } from "lucide-svelte";
   import { onMount } from "svelte";
   import { getChatContext } from "./chat-runtime-context";
+  import { locale, t, tf } from "./i18n";
 
   interface VfsFile {
     path: string;
@@ -166,14 +167,17 @@
 <div class="flex-1 overflow-y-auto" style="font-family: var(--chat-font-mono)">
   <div class="flex items-center justify-between px-3 py-2 border-b border-(--chat-border)">
     <span class="text-xs text-(--chat-text-muted)">
-      {files.length} file{files.length !== 1 ? "s" : ""}
+      {tf($locale, "files.count", {
+        count: files.length,
+        suffix: files.length !== 1 ? "s" : "",
+      })}
     </span>
     <button
       type="button"
       onclick={refresh}
       disabled={loading}
       class="p-1 text-(--chat-text-muted) hover:text-(--chat-text-primary) transition-colors disabled:opacity-50"
-      title="Refresh"
+      title={t($locale, "files.refresh")}
     >
       <RefreshCw size={12} class={loading ? "animate-spin" : ""} />
     </button>
@@ -182,8 +186,8 @@
   {#if files.length === 0}
     <div class="flex flex-col items-center justify-center gap-2 py-12 text-(--chat-text-muted)">
       <FolderOpen size={24} />
-      <span class="text-xs">No files in virtual filesystem</span>
-      <span class="text-[10px]">Upload files or let the agent create them</span>
+      <span class="text-xs">{t($locale, "files.empty")}</span>
+      <span class="text-[10px]">{t($locale, "files.emptyHint")}</span>
     </div>
   {:else}
     <div class="divide-y divide-(--chat-border)">
@@ -217,7 +221,7 @@
                     type="button"
                     onclick={() => handlePreview(file)}
                     class="p-1 text-(--chat-text-muted) hover:text-(--chat-accent) transition-colors"
-                    title="Preview"
+                    title={t($locale, "files.preview")}
                   >
                     <Image size={12} />
                   </button>
@@ -227,7 +231,7 @@
                   type="button"
                   onclick={() => handleDownload(file)}
                   class="p-1 text-(--chat-text-muted) hover:text-(--chat-accent) transition-colors"
-                  title="Download"
+                  title={t($locale, "files.download")}
                 >
                   <Download size={12} />
                 </button>
@@ -236,7 +240,7 @@
                   type="button"
                   onclick={() => handleDelete(file)}
                   class="p-1 text-(--chat-text-muted) hover:text-(--chat-error) transition-colors"
-                  title="Delete"
+                  title={t($locale, "files.delete")}
                 >
                   <Trash2 size={12} />
                 </button>

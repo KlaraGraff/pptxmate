@@ -5,6 +5,7 @@
     extractClipboardImages,
     isImageFilename,
   } from "./clipboard-images";
+  import { locale, t } from "./i18n";
 
   const LINE_HEIGHT = 20;
   const MIN_ROWS = 1;
@@ -51,9 +52,9 @@
       trimmed ||
       (attachmentNames.every(isImageFilename)
         ? attachmentNames.length === 1
-          ? "Please inspect the attached image."
-          : "Please inspect the attached images."
-        : "Please inspect the attached file.");
+          ? t($locale, "chat.inspectImage")
+          : t($locale, "chat.inspectImages")
+        : t($locale, "chat.inspectFile"));
     input = "";
     await chat.sendMessage(
       message,
@@ -139,7 +140,7 @@
             type="button"
             onclick={() => chat.removeUpload(file.name)}
             class="ml-0.5 text-(--chat-text-muted) hover:text-(--chat-error) transition-colors"
-            title="Remove from list"
+            title={t($locale, "chat.removeUpload")}
           >
             <X size={10} />
           </button>
@@ -173,8 +174,8 @@
         }
       }}
       placeholder={$runtimeState.providerConfig
-        ? "Type a message..."
-        : "Configure API key in settings"}
+        ? t($locale, "chat.messagePlaceholder")
+        : t($locale, "chat.configureApi")}
       disabled={!$runtimeState.providerConfig}
       class="w-full resize-none bg-transparent text-(--chat-text-primary) text-sm px-3 pt-2 pb-0 border-none outline-none placeholder:text-(--chat-text-muted) disabled:opacity-50 disabled:cursor-not-allowed"
       style={`font-family: var(--chat-font-mono); line-height: ${LINE_HEIGHT}px; height: ${LINE_HEIGHT * MIN_ROWS}px;`}
@@ -190,7 +191,7 @@
           $runtimeState.isStreaming
         }
         class="flex items-center justify-center w-6 h-5 text-(--chat-text-muted) hover:text-(--chat-text-primary) disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-        title="Upload files"
+        title={t($locale, "chat.uploadFiles")}
       >
         <Paperclip
           size={13}

@@ -27,11 +27,13 @@
     Eye,
     EyeOff,
     FolderUp,
+    Globe2,
     LogOut,
     Plus,
     Trash2,
   } from "lucide-svelte";
   import { getChatContext } from "./chat-runtime-context";
+  import { locale, setLocale, t, type Locale } from "./i18n";
 
   const chat = getChatContext();
   const runtimeState = chat.state;
@@ -342,13 +344,40 @@
 <div class="flex-1 overflow-y-auto p-4 space-y-6" style="font-family: var(--chat-font-mono)">
   <div>
     <div class="text-[10px] uppercase tracking-widest text-(--chat-text-muted) mb-4">
-      api configuration
+      {t($locale, "language.section")}
+    </div>
+    <label class="block">
+      <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
+        {t($locale, "language.label")}
+      </span>
+      <div class="relative">
+        <Globe2
+          size={14}
+          class="absolute left-3 top-1/2 -translate-y-1/2 text-(--chat-text-muted) pointer-events-none"
+        />
+        <select
+          value={$locale}
+          onchange={(event) =>
+            setLocale((event.currentTarget as HTMLSelectElement).value as Locale)}
+          class="w-full bg-(--chat-input-bg) text-(--chat-text-primary) text-sm pl-9 pr-3 py-2 border border-(--chat-border) focus:outline-none focus:border-(--chat-border-active)"
+          style={inputStyle}
+        >
+          <option value="en">{t($locale, "language.english")}</option>
+          <option value="zh-CN">{t($locale, "language.chinese")}</option>
+        </select>
+      </div>
+    </label>
+  </div>
+
+  <div>
+    <div class="text-[10px] uppercase tracking-widest text-(--chat-text-muted) mb-4">
+      {t($locale, "settings.apiConfiguration")}
     </div>
 
     <div class="space-y-4">
       <label class="block">
         <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-          Provider
+          {t($locale, "settings.provider")}
         </span>
         <select
           value={provider}
@@ -357,19 +386,19 @@
           class="w-full bg-(--chat-input-bg) text-(--chat-text-primary) text-sm px-3 py-2 border border-(--chat-border) focus:outline-none focus:border-(--chat-border-active)"
           style={inputStyle}
         >
-          <option value="">Select provider...</option>
+          <option value="">{t($locale, "settings.selectProvider")}</option>
           {#each chat.availableProviders as availableProvider (availableProvider)}
             <option value={availableProvider}>{availableProvider}</option>
           {/each}
           <option disabled>──────────</option>
-          <option value="custom">Custom Endpoint</option>
+          <option value="custom">{t($locale, "settings.customEndpoint")}</option>
         </select>
       </label>
 
       {#if isCustom}
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            API Type
+            {t($locale, "settings.apiType")}
           </span>
           <select
             value={apiType}
@@ -391,7 +420,7 @@
 
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            Base URL
+            {t($locale, "settings.baseUrl")}
           </span>
           <input
             type="text"
@@ -402,13 +431,13 @@
             style={inputStyle}
           />
           <p class="text-[10px] text-(--chat-text-muted) mt-1">
-            The API endpoint URL for your provider
+            {t($locale, "settings.baseUrlHint")}
           </p>
         </label>
 
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            Model ID
+            {t($locale, "settings.modelId")}
           </span>
           <input
             type="text"
@@ -424,7 +453,7 @@
       {#if !isCustom && provider}
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            Model
+            {t($locale, "settings.model")}
           </span>
           <select
             value={model}
@@ -433,7 +462,7 @@
             class="w-full bg-(--chat-input-bg) text-(--chat-text-primary) text-sm px-3 py-2 border border-(--chat-border) focus:outline-none focus:border-(--chat-border-active) disabled:opacity-50 disabled:cursor-not-allowed"
             style={inputStyle}
           >
-            <option value="">Select model...</option>
+            <option value="">{t($locale, "settings.selectModel")}</option>
             {#each models as availableModel (availableModel.id)}
               <option value={availableModel.id}>{availableModel.name}</option>
             {/each}
@@ -444,7 +473,7 @@
       {#if hasOAuth}
         <div>
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            Authentication
+            {t($locale, "settings.authentication")}
           </span>
           <div class="flex gap-1">
             <button
@@ -453,7 +482,7 @@
               class={`flex-1 py-1.5 text-xs border transition-colors ${authMethod === "apikey" ? "bg-(--chat-accent) border-(--chat-accent) text-white" : "bg-(--chat-input-bg) border-(--chat-border) text-(--chat-text-secondary) hover:border-(--chat-border-active)"}`}
               style="border-radius: var(--chat-radius)"
             >
-              API Key
+              {t($locale, "settings.apiKey")}
             </button>
             <button
               type="button"
@@ -477,20 +506,22 @@
               style="border-radius: var(--chat-radius)"
             >
               <ExternalLink size={12} />
-              {OAUTH_PROVIDERS[provider]?.buttonText ?? "Login"}
+              {OAUTH_PROVIDERS[provider]?.buttonText ?? t($locale, "settings.login")}
             </button>
           {:else if oauthFlow.step === "awaiting-code"}
             <div class="space-y-2">
               <p class="text-[10px] text-(--chat-text-muted)">
                 {provider === "openai-codex"
-                  ? "Complete login in the opened tab. The page will redirect to localhost and fail — copy the full URL from your browser's address bar and paste it below:"
-                  : "Authorize in the opened tab, then paste the code shown on the redirect page:"}
+                  ? t($locale, "settings.oauthAwaitingCodex")
+                  : t($locale, "settings.oauthAwaiting")}
               </p>
               <div class="flex gap-1">
                 <input
                   type="text"
                   bind:value={oauthCodeInput}
-                  placeholder={provider === "openai-codex" ? "Paste the full redirect URL here" : "Paste code#state here"}
+                  placeholder={provider === "openai-codex"
+                    ? t($locale, "settings.oauthRedirectPlaceholder")
+                    : t($locale, "settings.oauthCodePlaceholder")}
                   class="flex-1 bg-(--chat-input-bg) text-(--chat-text-primary) text-sm px-3 py-2 border border-(--chat-border) placeholder:text-(--chat-text-muted) focus:outline-none focus:border-(--chat-border-active)"
                   style={inputStyle}
                   onkeydown={(event) => event.key === "Enter" && submitOAuthCode()}
@@ -502,11 +533,11 @@
                   class="px-3 py-2 text-xs bg-(--chat-accent) text-white border border-(--chat-accent) hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   style="border-radius: var(--chat-radius)"
                 >
-                  Submit
+                  {t($locale, "settings.submit")}
                 </button>
               </div>
               <p class="text-[10px] text-(--chat-text-muted)">
-                Requires CORS proxy to be enabled for token exchange.
+                {t($locale, "settings.oauthCorsHint")}
               </p>
             </div>
           {:else if oauthFlow.step === "exchanging"}
@@ -514,7 +545,7 @@
               class="px-3 py-2.5 text-xs text-(--chat-text-muted) bg-(--chat-input-bg) border border-(--chat-border)"
               style="border-radius: var(--chat-radius)"
             >
-              Exchanging authorization code…
+              {t($locale, "settings.oauthExchanging")}
             </div>
           {:else if oauthFlow.step === "connected"}
             <div
@@ -524,7 +555,7 @@
               <div class="flex items-center gap-2 text-xs">
                 <Check size={12} class="text-(--chat-success)" />
                 <span class="text-(--chat-text-secondary)">
-                  Connected via OAuth
+                  {t($locale, "settings.oauthConnected")}
                 </span>
               </div>
               <button
@@ -533,7 +564,7 @@
                 class="flex items-center gap-1 text-[10px] text-(--chat-text-muted) hover:text-(--chat-error) transition-colors"
               >
                 <LogOut size={10} />
-                Logout
+                {t($locale, "settings.logout")}
               </button>
             </div>
           {:else if oauthFlow.step === "error"}
@@ -549,7 +580,7 @@
                 onclick={() => (oauthFlow = { step: "idle" })}
                 class="text-[10px] text-(--chat-text-muted) hover:text-(--chat-text-secondary) transition-colors"
               >
-                Try again
+                {t($locale, "settings.tryAgain")}
               </button>
             </div>
           {/if}
@@ -559,14 +590,14 @@
       {#if showApiKeyInput}
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            API Key
+            {t($locale, "settings.apiKey")}
           </span>
           <div class="relative">
             <input
               type={showKey ? "text" : "password"}
               bind:value={apiKey}
               oninput={() => updateAndSync({ apiKey })}
-              placeholder="Enter your API key"
+              placeholder={t($locale, "settings.enterApiKey")}
               class="w-full bg-(--chat-input-bg) text-(--chat-text-primary) text-sm px-3 py-2 pr-10 border border-(--chat-border) placeholder:text-(--chat-text-muted) focus:outline-none focus:border-(--chat-border-active)"
               style={inputStyle}
             />
@@ -588,23 +619,25 @@
       <div class="flex items-center justify-between">
         <div>
           <span class="text-xs text-(--chat-text-secondary)">
-            CORS Proxy
+            {t($locale, "settings.corsProxy")}
           </span>
           <p class="text-[10px] text-(--chat-text-muted) mt-0.5">
-            Required for Anthropic and some providers
+            {t($locale, "settings.corsProxyHint")}
           </p>
         </div>
         {@render toggleSwitch(
           useProxy,
           () => updateAndSync({ useProxy: !useProxy }),
-          useProxy ? "Disable CORS proxy" : "Enable CORS proxy",
+          useProxy
+            ? t($locale, "settings.disableCorsProxy")
+            : t($locale, "settings.enableCorsProxy"),
         )}
       </div>
 
       {#if useProxy}
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            Proxy URL
+            {t($locale, "settings.proxyUrl")}
           </span>
           <input
             type="text"
@@ -615,14 +648,14 @@
             style={inputStyle}
           />
           <p class="text-[10px] text-(--chat-text-muted) mt-1">
-            Your proxy should accept ?url=encoded_url format
+            {t($locale, "settings.proxyUrlHint")}
           </p>
         </label>
       {/if}
 
       <div>
         <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-          Thinking Level
+          {t($locale, "settings.thinkingLevel")}
         </span>
         <div class="flex gap-1">
           {#each THINKING_LEVELS as level (level.value)}
@@ -637,34 +670,36 @@
           {/each}
         </div>
         <p class="text-[10px] text-(--chat-text-muted) mt-1">
-          Extended thinking for supported models
+          {t($locale, "settings.thinkingHint")}
         </p>
       </div>
 
       <div class="flex items-center justify-between">
         <div>
           <span class="text-xs text-(--chat-text-secondary)">
-            Expand Tool Calls
+            {t($locale, "settings.expandToolCalls")}
           </span>
           <p class="text-[10px] text-(--chat-text-muted) mt-0.5">
-            Show tool call details expanded by default
+            {t($locale, "settings.expandToolCallsHint")}
           </p>
         </div>
         {@render toggleSwitch(
           expandToolCalls,
           () => chat.toggleExpandToolCalls(),
-          expandToolCalls ? "Collapse tool calls by default" : "Expand tool calls by default",
+          expandToolCalls
+            ? t($locale, "settings.expandToolCallsOff")
+            : t($locale, "settings.expandToolCallsOn"),
         )}
       </div>
 
       <div class="border-t border-(--chat-border) pt-4 space-y-3">
         <div class="text-[10px] uppercase tracking-widest text-(--chat-text-muted)">
-          web tools
+          {t($locale, "settings.webTools")}
         </div>
 
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            Default Search Provider
+            {t($locale, "settings.searchProvider")}
           </span>
           <select
             value={webSearchProvider}
@@ -680,14 +715,14 @@
             {/each}
           </select>
           <p class="text-[10px] text-(--chat-text-muted) mt-1">
-            Used by web-search.
+            {t($locale, "settings.searchProviderHint")}
           </p>
         </label>
 
         {#if adapter.hasImageSearch}
           <label class="block">
             <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-              Default Image Search Provider
+              {t($locale, "settings.imageSearchProvider")}
             </span>
             <select
               value={imageSearchProvider}
@@ -704,14 +739,14 @@
               {/each}
             </select>
             <p class="text-[10px] text-(--chat-text-muted) mt-1">
-              Used by image-search.
+              {t($locale, "settings.imageSearchProviderHint")}
             </p>
           </label>
         {/if}
 
         <label class="block">
           <span class="block text-xs text-(--chat-text-secondary) mb-1.5">
-            Default Fetch Provider
+            {t($locale, "settings.fetchProvider")}
           </span>
           <select
             value={webFetchProvider}
@@ -727,20 +762,20 @@
             {/each}
           </select>
           <p class="text-[10px] text-(--chat-text-muted) mt-1">
-            Used by web-fetch.
+            {t($locale, "settings.fetchProviderHint")}
           </p>
         </label>
 
         {#if needsBraveKey}
-          {@render apiKeyField("Brave API Key", braveApiKey, (v) => { braveApiKey = v; updateWebSettings({ braveApiKey }); }, "Required for Brave search")}
+          {@render apiKeyField("Brave API Key", braveApiKey, (v) => { braveApiKey = v; updateWebSettings({ braveApiKey }); }, t($locale, "settings.requiredForBrave"))}
         {/if}
 
         {#if needsSerperKey}
-          {@render apiKeyField("Serper API Key", serperApiKey, (v) => { serperApiKey = v; updateWebSettings({ serperApiKey }); }, "Required for Serper search")}
+          {@render apiKeyField("Serper API Key", serperApiKey, (v) => { serperApiKey = v; updateWebSettings({ serperApiKey }); }, t($locale, "settings.requiredForSerper"))}
         {/if}
 
         {#if needsExaKey}
-          {@render apiKeyField("Exa API Key", exaApiKey, (v) => { exaApiKey = v; updateWebSettings({ exaApiKey }); }, "Required for Exa search/fetch")}
+          {@render apiKeyField("Exa API Key", exaApiKey, (v) => { exaApiKey = v; updateWebSettings({ exaApiKey }); }, t($locale, "settings.requiredForExa"))}
         {/if}
 
         <div class="pt-1">
@@ -755,7 +790,9 @@
               <ChevronDown size={12} />
             {/if}
             <span>
-              {showAdvancedWebKeys ? "Hide" : "Show"} advanced saved API keys
+              {showAdvancedWebKeys
+                ? t($locale, "settings.hideAdvancedKeys")
+                : t($locale, "settings.showAdvancedKeys")}
             </span>
           </button>
         </div>
@@ -763,15 +800,15 @@
         {#if showAdvancedWebKeys}
           <div class="space-y-3 border border-(--chat-border) p-3 bg-(--chat-input-bg)">
             {#if !needsBraveKey}
-              {@render apiKeyField("Brave API Key", braveApiKey, (v) => { braveApiKey = v; updateWebSettings({ braveApiKey }); }, "Optional", true)}
+              {@render apiKeyField("Brave API Key", braveApiKey, (v) => { braveApiKey = v; updateWebSettings({ braveApiKey }); }, t($locale, "settings.optional"), true)}
             {/if}
 
             {#if !needsSerperKey}
-              {@render apiKeyField("Serper API Key", serperApiKey, (v) => { serperApiKey = v; updateWebSettings({ serperApiKey }); }, "Optional", true)}
+              {@render apiKeyField("Serper API Key", serperApiKey, (v) => { serperApiKey = v; updateWebSettings({ serperApiKey }); }, t($locale, "settings.optional"), true)}
             {/if}
 
             {#if !needsExaKey}
-              {@render apiKeyField("Exa API Key", exaApiKey, (v) => { exaApiKey = v; updateWebSettings({ exaApiKey }); }, "Optional", true)}
+              {@render apiKeyField("Exa API Key", exaApiKey, (v) => { exaApiKey = v; updateWebSettings({ exaApiKey }); }, t($locale, "settings.optional"), true)}
             {/if}
           </div>
         {/if}
@@ -784,17 +821,19 @@
       {#if isConfigured}
         <Check size={12} class="text-(--chat-success)" />
         <span class="text-(--chat-text-secondary)">
-          Using
+          {t($locale, "settings.using")}
           {#if $runtimeState.providerConfig?.provider === "custom"}
             custom ({$runtimeState.providerConfig?.apiType})
           {:else}
             {$runtimeState.providerConfig?.provider}
           {/if}
-          {$runtimeState.providerConfig?.authMethod === "oauth" ? " via OAuth" : ""}
+          {$runtimeState.providerConfig?.authMethod === "oauth"
+            ? ` ${t($locale, "settings.viaOAuth")}`
+            : ""}
         </span>
       {:else}
         <span class="text-(--chat-text-muted)">
-          Fill in all fields above to get started
+          {t($locale, "settings.configurePrompt")}
         </span>
       {/if}
     </div>
@@ -802,7 +841,7 @@
 
   <div class="border-t border-(--chat-border) pt-4">
     <div class="text-[10px] uppercase tracking-widest text-(--chat-text-muted) mb-4">
-      agent skills
+      {t($locale, "settings.agentSkills")}
     </div>
 
     <div class="space-y-3">
@@ -825,7 +864,7 @@
                 type="button"
                 onclick={() => chat.uninstallSkill(skill.name)}
                 class="shrink-0 p-1 text-(--chat-text-muted) hover:text-(--chat-error) transition-colors"
-                title="Remove skill"
+                title={t($locale, "settings.removeSkill")}
               >
                 <Trash2 size={12} />
               </button>
@@ -833,7 +872,9 @@
           {/each}
         </div>
       {:else}
-        <p class="text-xs text-(--chat-text-muted)">No skills installed</p>
+        <p class="text-xs text-(--chat-text-muted)">
+          {t($locale, "settings.noSkills")}
+        </p>
       {/if}
 
       <div class="flex gap-2">
@@ -845,7 +886,9 @@
           style="border-radius: var(--chat-radius)"
         >
           <FolderUp size={12} />
-          {installing ? "Installing…" : "Add Folder"}
+          {installing
+            ? t($locale, "settings.installing")
+            : t($locale, "settings.addFolder")}
         </button>
         <button
           type="button"
@@ -855,13 +898,14 @@
           style="border-radius: var(--chat-radius)"
         >
           <Plus size={12} />
-          {installing ? "Installing…" : "Add File"}
+          {installing
+            ? t($locale, "settings.installing")
+            : t($locale, "settings.addFile")}
         </button>
       </div>
 
       <p class="text-[10px] text-(--chat-text-muted)">
-        Add a skill folder or a single SKILL.md file. Skills must have valid
-        frontmatter with name and description.
+        {t($locale, "settings.skillsHint")}
       </p>
     </div>
 
@@ -884,22 +928,19 @@
 
   <div class="border-t border-(--chat-border) pt-4">
     <div class="text-[10px] uppercase tracking-widest text-(--chat-text-muted) mb-2">
-      about
+      {t($locale, "settings.about")}
     </div>
     <p class="text-xs text-(--chat-text-secondary) leading-relaxed">
-      {adapter.appName || "This app"} uses your own API key to connect to LLM
-      providers. Your key is stored locally in the browser.
+      {adapter.appName || "This app"} {t($locale, "settings.aboutText")}
     </p>
     {#if isCustom}
       <p class="text-xs text-(--chat-text-muted) leading-relaxed mt-2">
-        Custom Endpoint: Point to any OpenAI-compatible API (Ollama, vLLM,
-        LMStudio) or other supported API types.
+        {t($locale, "settings.customEndpointHint")}
       </p>
     {/if}
     {#if useProxy}
       <p class="text-xs text-(--chat-text-muted) leading-relaxed mt-2">
-        CORS Proxy: Requests route through your proxy to bypass browser CORS
-        restrictions. Required for Claude OAuth and some providers.
+        {t($locale, "settings.corsAbout")}
       </p>
     {/if}
     <p class="text-[10px] text-(--chat-text-muted) mt-3">

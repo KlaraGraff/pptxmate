@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { locale, t } from "./i18n";
+
   interface Props {
     thinking: string;
     isStreaming?: boolean;
@@ -21,7 +23,7 @@
     class="w-full flex items-center gap-1.5 px-2 py-1 text-[10px] uppercase tracking-wider text-(--chat-accent) hover:bg-(--chat-bg-secondary) transition-colors"
   >
     {@render chevron(isExpanded)}
-    <span>thinking</span>
+    <span>{t($locale, "chat.thinking")}</span>
     {#if isStreaming}
       <span class="animate-pulse ml-1">...</span>
     {/if}

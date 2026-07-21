@@ -18,6 +18,7 @@
   import type { AppAdapter } from "./app-adapter";
   import { ChatController } from "./chat-controller";
   import { setChatContext } from "./chat-runtime-context";
+  import { applyLocale, locale, t } from "./i18n";
   import ChatInput from "./chat-input.svelte";
   import FilesPanel from "./files-panel.svelte";
   import MessageList from "./message-list.svelte";
@@ -141,6 +142,10 @@
   });
 
   $effect(() => {
+    applyLocale($locale);
+  });
+
+  $effect(() => {
     if (!sessionDropdownOpen) return undefined;
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
@@ -153,7 +158,7 @@
   });
 
   const currentName = $derived(
-    $runtimeState.currentSession?.name ?? "New Chat",
+    $runtimeState.currentSession?.name ?? t($locale, "chat.newChat"),
   );
   const truncatedName = $derived(
     currentName.length > 20 ? `${currentName.slice(0, 18)}…` : currentName,
@@ -202,7 +207,7 @@
                   class={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors border-b border-(--chat-border) ${$runtimeState.isStreaming ? "text-(--chat-text-muted) cursor-not-allowed" : "text-(--chat-accent) hover:bg-(--chat-bg-secondary)"}`}
                 >
                   <Plus size={14} />
-                  New Chat
+                  {t($locale, "nav.newChat")}
                 </button>
 
                 <div class="max-h-48 overflow-y-auto">
@@ -251,7 +256,7 @@
                     class={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors border-t border-(--chat-border) ${$runtimeState.isStreaming ? "text-(--chat-text-muted) cursor-not-allowed" : "text-(--chat-error) hover:bg-(--chat-bg-secondary)"}`}
                   >
                     <Trash2 size={14} />
-                    Delete Current Session
+                    {t($locale, "nav.deleteCurrentSession")}
                   </button>
                 {/if}
               </div>
@@ -265,7 +270,7 @@
             style="font-family: var(--chat-font-mono)"
           >
             <MessageSquare size={12} />
-            Chat
+            {t($locale, "nav.chat")}
           </button>
         {/if}
 
@@ -276,7 +281,7 @@
           style="font-family: var(--chat-font-mono)"
         >
           <FolderOpen size={12} />
-          Files
+          {t($locale, "nav.files")}
         </button>
 
         <button
@@ -286,7 +291,7 @@
           style="font-family: var(--chat-font-mono)"
         >
           <Settings size={12} />
-          Settings
+          {t($locale, "nav.settings")}
         </button>
       </div>
 
@@ -300,7 +305,9 @@
             type="button"
             onclick={() => controller.toggleFollowMode()}
             class={`p-1.5 transition-colors ${followMode ? "text-(--chat-accent) hover:text-(--chat-text-primary)" : "text-(--chat-text-muted) hover:text-(--chat-text-primary)"}`}
-            data-tooltip={followMode ? "Follow mode: ON" : "Follow mode: OFF"}
+            data-tooltip={followMode
+              ? t($locale, "nav.followOn")
+              : t($locale, "nav.followOff")}
           >
             {#if followMode}
               <Eye size={14} />
@@ -314,7 +321,9 @@
           type="button"
           onclick={toggleTheme}
           class="p-1.5 text-(--chat-text-muted) hover:text-(--chat-text-primary) transition-colors"
-          data-tooltip={theme === "dark" ? "Light mode" : "Dark mode"}
+          data-tooltip={theme === "dark"
+            ? t($locale, "nav.lightMode")
+            : t($locale, "nav.darkMode")}
         >
           {#if theme === "dark"}
             <Sun size={14} />
@@ -328,7 +337,7 @@
             type="button"
             onclick={() => controller.clearMessages()}
             class="p-1.5 text-(--chat-text-muted) hover:text-(--chat-error) transition-colors"
-            data-tooltip="Clear messages"
+            data-tooltip={t($locale, "nav.clearMessages")}
           >
             <Trash2 size={14} />
           </button>
@@ -349,27 +358,27 @@
         style="font-family: var(--chat-font-mono)"
       >
         <div class="flex items-center gap-3">
-          <span title="Input tokens">
+          <span title={t($locale, "nav.inputTokens")}>
             ↑{formatTokens($runtimeState.sessionStats.inputTokens)}
           </span>
-          <span title="Output tokens">
+          <span title={t($locale, "nav.outputTokens")}>
             ↓{formatTokens($runtimeState.sessionStats.outputTokens)}
           </span>
           {#if $runtimeState.sessionStats.cacheRead > 0}
-            <span title="Cache read tokens">
+            <span title={t($locale, "nav.cacheRead")}>
               R{formatTokens($runtimeState.sessionStats.cacheRead)}
             </span>
           {/if}
           {#if $runtimeState.sessionStats.cacheWrite > 0}
-            <span title="Cache write tokens">
+            <span title={t($locale, "nav.cacheWrite")}>
               W{formatTokens($runtimeState.sessionStats.cacheWrite)}
             </span>
           {/if}
-          <span title="Total cost">
+          <span title={t($locale, "nav.totalCost")}>
             {formatCost($runtimeState.sessionStats.totalCost)}
           </span>
           {#if $runtimeState.sessionStats.contextWindow > 0}
-            <span title="Context usage">
+            <span title={t($locale, "nav.contextUsage")}>
               {(
                 (($runtimeState.sessionStats.lastInputTokens || 0) /
                   $runtimeState.sessionStats.contextWindow) *
@@ -407,7 +416,9 @@
         class="flex flex-col items-center gap-3 p-8 border-2 border-dashed border-(--chat-accent) rounded-lg"
       >
         <Upload size={32} class="text-(--chat-accent)" />
-        <span class="text-sm text-(--chat-text-primary)">Drop files here</span>
+        <span class="text-sm text-(--chat-text-primary)">
+          {t($locale, "nav.dropFiles")}
+        </span>
       </div>
     </div>
   {/if}
