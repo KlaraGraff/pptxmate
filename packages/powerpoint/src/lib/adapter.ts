@@ -289,7 +289,7 @@ async function getPresentationMetadata(
       selectedSlides: selectedIndices,
       selectedShapes,
       omittedFields:
-        route === "text" || route === "general"
+        route === "text" || route === "translationAudit" || route === "general"
           ? [
               "slideGeometry",
               "shapeGeometry",

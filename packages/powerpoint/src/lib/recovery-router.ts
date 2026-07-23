@@ -7,6 +7,7 @@ const READ_TOOLS = new Set([
   "screenshot_slide",
   "list_slide_shapes",
   "read_slide_texts",
+  "read_slide_translatable_texts",
   "read_slide_text",
   "verify_slides",
 ]);
@@ -14,6 +15,7 @@ const READ_TOOLS = new Set([
 const MUTATION_TOOLS = new Set([
   "execute_office_js",
   "edit_slide_text",
+  "patch_slide_text",
   "update_slide_text",
   "edit_slide_xml",
   "edit_slide_chart",
@@ -24,6 +26,7 @@ const MUTATION_TOOLS = new Set([
 const MUTATION_KINDS = {
   execute_office_js: "arbitrary",
   edit_slide_text: "text",
+  patch_slide_text: "text",
   update_slide_text: "text",
   edit_slide_chart: "arbitrary",
   edit_slide_master: "arbitrary",
@@ -35,6 +38,7 @@ const VERIFICATION_KINDS = {
   list_slides: ["structure"],
   read_slides: ["text"],
   read_slide_texts: ["text"],
+  read_slide_translatable_texts: ["text"],
   read_slide_text: ["text"],
   verify_slides: ["layout"],
   screenshot_slide: ["layout"],
@@ -359,7 +363,7 @@ export function normalizePowerPointToolArgsForReplay(
     delete normalized.directoryVersion;
   }
 
-  if (toolName === "edit_slide_text") {
+  if (toolName === "edit_slide_text" || toolName === "patch_slide_text") {
     delete normalized.expected_text;
     delete normalized.expected_text_hash;
     if (typeof normalized.text === "string") {

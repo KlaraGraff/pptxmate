@@ -6,6 +6,7 @@
  */
 export type PowerPointTaskRoute =
   | "text"
+  | "translationAudit"
   | "layout"
   | "create"
   | "verify"
@@ -15,6 +16,8 @@ const CREATE_RE =
   /((创建|新建|从零).{0,16}(演示文稿|幻灯片|PPT)|(制作|生成|搭建).{0,8}(一份|一套|整套|整份|全新).{0,8}(演示文稿|幻灯片|PPT)|(create|build)\s+(a\s+|an\s+|new\s+|the\s+)?(presentation|slide deck|deck|slides?)|make\s+(a\s+|new\s+)(presentation|slide deck|deck)|new presentation)/i;
 const VERIFY_RE =
   /(重叠|越界|溢出|错位|(检查|验证|校验|审查).{0,16}(布局|排版|重叠|越界|溢出|错位)|(verify|inspect|check|review).{0,24}(layout|overlap|overflow|out of bounds|misalign)|screenshot)/i;
+const TRANSLATION_AUDIT_RE =
+  /((检查|验证|校验|审查|审校|核查|review|audit|check|verify).{0,24}(翻译|译文|双语|translation)|(翻译|译文|双语|translation).{0,24}(遗漏|漏译|缺失|不匹配|准确|一致|完整|遗漏|missing|omission|mismatch|accuracy|consistent|complete|review|audit|check|verify))/i;
 const STRUCTURE_RE =
   /((删除|删掉|移除|复制|拷贝|克隆|移动|交换)(第\s*\d+\s*(页|张)|这(一)?(页|张|幻灯片)|当前(页|幻灯片)|幻灯片)(?![^，。；！？,.!?]{0,8}(文字|文本|内容))|(第\s*\d+\s*(页|张)|这(一)?(页|张|幻灯片)|当前(页|幻灯片)|幻灯片)[^，。；！？,.!?]{0,12}(移到|移动到|挪到|放到|删除|删掉|移除)|(重排|重新排序).{0,8}(幻灯片|页面|PPT)|(调整|改变|修改).{0,8}(幻灯片|页面|PPT).{0,8}(顺序|次序)|(添加|插入).{0,8}(幻灯片|页面)|\b(delete|remove|duplicate|copy|clone|move)\s+(the\s+)?((current|first|second|third|fourth|fifth|last|\d+(st|nd|rd|th)?)\s+)?(slide|page)s?\b|\breorder\s+(the\s+)?(slides|pages)\b|\b(change|adjust|update)\s+(the\s+)?(slide|page)\s+(order|sequence)\b)/i;
 const LAYOUT_RE =
@@ -33,8 +36,11 @@ const PRESERVED_LAYOUT_CLAUSE_RE =
   /((保持|保留|维持|不改|不修改|不要改|无需改)[^，。；！？,.!?]{0,48}|(格式|样式|字体|字号|颜色|位置|布局|排版)[^，。；！？,.!?]{0,16}(不变|保持|保留|维持|不改|不修改)|(keep|preserve|retain|without changing|do not change)[^,.;!?]{0,64}|(format|style|font|color|position|layout)[^,.;!?]{0,24}(unchanged|intact|as is))/gi;
 const CONTRASTED_LAYOUT_RE =
   /((但|并|同时|然后|以及).{0,8}(调整|修改|改变|设置|移动|放大|缩小|对齐|更换).{0,12}(字体|字号|颜色|样式|格式|布局|位置|坐标|大小|尺寸|对齐|间距|主题|母版|背景|设计|排版)|(but|and|then).{0,12}(adjust|change|set|move|resize|align|recolor).{0,16}(font|color|style|format|layout|position|size|spacing|theme|master|background|design))/i;
+const SAME_AS_BEFORE_RE =
+  /^(?:同上|按(?:照)?(?:上(?:一)?次|刚才|上面)(?:的方式)?)(?:处理|继续|做)?(?:第\s*\d+\s*(?:页|张)|(?:下(?:一)?|另(?:一|外)?|后续|剩余|其余)(?:页|张|页面|幻灯片)?)?[。.!！\s]*$/i;
 const CONTINUATION_PATTERNS = [
   /^(?:继续(?:处理)?(?:下(?:一)?(?:页|张)|后续(?:页面|幻灯片)?|剩余(?:页面|幻灯片)?|其余(?:页面|幻灯片)?)?(?:也)?(?:一样|同样)?|接着(?:做|处理|继续)?(?:下(?:一)?(?:页|张))?|下(?:一)?(?:页|张)(?:(?:也)?(?:一样|同样)|继续(?:处理)?)?|按(?:照)?刚才(?:的方式)?(?:处理)?|同样处理|照此处理)[。.!！\s]*$/i,
+  SAME_AS_BEFORE_RE,
   /^(?:continue(?:\s+(?:(?:with|to|on)\s+)?(?:the\s+)?(?:rest|remaining\s+(?:slides?|pages?)|next\s+(?:slide|page)))?|keep\s+going(?:\s+(?:(?:with|on)\s+)?(?:the\s+)?(?:rest|next\s+(?:slide|page)))?|carry\s+on|same\s+(?:for|on)\s+the\s+next\s+(?:slide|page)|do\s+(?:the\s+)?(?:rest|same\s+for\s+the\s+next\s+(?:slide|page)))[.!?\s]*$/i,
   /^(?:move\s+on\s+to\s+(?:the\s+)?next\s+(?:slide|page))[.!?\s]*$/i,
 ];
@@ -51,6 +57,7 @@ export function routePowerPointRequest(
   const text = userMessage.trim();
   if (CREATE_RE.test(text)) return "create";
   if (VERIFY_RE.test(text)) return "verify";
+  if (TRANSLATION_AUDIT_RE.test(text)) return "translationAudit";
   if (STRUCTURE_RE.test(text)) return "layout";
   const positiveLayoutText = text.replace(PRESERVED_LAYOUT_CLAUSE_RE, "");
   if (

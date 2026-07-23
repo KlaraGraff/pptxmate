@@ -39,8 +39,9 @@ describe("PowerPoint request routing", () => {
     ["翻译成法语并保持加粗不变", "text"],
     ["Replace the wording without changing the font or color", "text"],
     ["为第 3 页生成法语翻译", "text"],
-    ["检查这段翻译是否准确", "text"],
-    ["检查第 3 页的翻译是否准确", "text"],
+    ["检查这段翻译是否准确", "translationAudit"],
+    ["检查第 3 页的翻译是否准确", "translationAudit"],
+    ["检查整个 PPT 的翻译有无遗漏或不匹配", "translationAudit"],
     ["检查 PPT 中的错别字", "text"],
     ["为这个 PPT 生成法语翻译", "text"],
     ["请总结这份 PPT", "text"],
@@ -108,6 +109,12 @@ describe("PowerPoint request routing", () => {
     expect(routePowerPointRequest("继续下一页", "text")).toBe("text");
     expect(routePowerPointRequest("继续处理下一页", "layout")).toBe("layout");
     expect(routePowerPointRequest("接着做", "text")).toBe("text");
+    expect(routePowerPointRequest("同上处理另一页", "text")).toBe("text");
+    expect(routePowerPointRequest("同上处理第 4 页", "layout")).toBe("layout");
+    expect(routePowerPointRequest("按上次的方式处理下一页", "text")).toBe(
+      "text",
+    );
+    expect(routePowerPointRequest("同上处理另一页")).toBe("general");
     expect(routePowerPointRequest("Move on to the next slide", "text")).toBe(
       "text",
     );
@@ -118,6 +125,7 @@ describe("PowerPoint request routing", () => {
       "layout",
     );
     expect(isPowerPointContinuationRequest("接着处理下一张")).toBe(true);
+    expect(isPowerPointContinuationRequest("同上处理另一页")).toBe(true);
     expect(isPowerPointContinuationRequest("Move on to the next slide")).toBe(
       true,
     );
@@ -126,12 +134,17 @@ describe("PowerPoint request routing", () => {
   it("keeps general requests on a compact discovery prompt", () => {
     const general = buildPowerPointSystemPrompt([], [], "general");
     const text = buildPowerPointSystemPrompt([], [], "text");
+    const audit = buildPowerPointSystemPrompt([], [], "translationAudit");
     const layout = buildPowerPointSystemPrompt([], [], "layout");
 
     expect(general).toContain("lightweight discovery path");
     expect(general).not.toContain("## Office.js API Reference");
     expect(general.length).toBeLessThan(6_000);
     expect(text).toContain("text-only path");
+    expect(audit).toContain("translation-audit request");
+    expect(audit).toContain("read_slide_translatable_texts");
+    expect(audit).toContain("patch_slide_text");
+    expect(audit).not.toContain("update_slide_text");
     expect(layout).toContain("## Office.js API Reference");
   });
 

@@ -17,6 +17,15 @@ const TEXT_TOOL_NAMES = new Set([
   "update_slide_text",
 ]);
 
+const TRANSLATION_AUDIT_TOOL_NAMES = new Set([
+  "read",
+  "bash",
+  "list_slides",
+  "read_slide_translatable_texts",
+  "read_slide_text",
+  "patch_slide_text",
+]);
+
 const DISCOVERY_TOOL_NAMES = new Set([
   "read",
   "bash",
@@ -61,6 +70,7 @@ export function powerPointToolAllowlist(
 ): ReadonlySet<string> | null {
   const route = routePowerPointMessage(userMessage, info);
   if (route === "general") return DISCOVERY_TOOL_NAMES;
+  if (route === "translationAudit") return TRANSLATION_AUDIT_TOOL_NAMES;
   if (route !== "text") return null;
 
   const allow = new Set(TEXT_TOOL_NAMES);

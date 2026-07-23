@@ -24,6 +24,17 @@ describe("PowerPoint tool routing", () => {
     expect(names).not.toContain("edit_slide_master");
   });
 
+  it("isolates translation audits from preview and whole-shape write tools", () => {
+    const names = routedToolNames("检查整个 PPT 的翻译有无遗漏或不匹配")!;
+
+    expect(names).toContain("read_slide_translatable_texts");
+    expect(names).toContain("read_slide_text");
+    expect(names).toContain("patch_slide_text");
+    expect(names).not.toContain("read_slides");
+    expect(names).not.toContain("edit_slide_text");
+    expect(names).not.toContain("update_slide_text");
+  });
+
   it("exposes text write tools for direct replacement wording", () => {
     const names = routedToolNames("把第 3 页的旧公司名改为新公司名")!;
 
@@ -95,6 +106,14 @@ describe("PowerPoint tool routing", () => {
     ).toBe("text");
     expect(routedToolNames("继续下一页", ["调整第 2 页布局"])).toBeNull();
     expect(routedToolNames("继续下一页", ["翻译第 2 页"])).toContain(
+      "update_slide_text",
+    );
+    expect(
+      routePowerPointMessage("同上处理另一页", {
+        priorUserMessages: ["翻译第 2 页"],
+      }),
+    ).toBe("text");
+    expect(routedToolNames("同上处理另一页", ["翻译第 2 页"])).toContain(
       "update_slide_text",
     );
   });

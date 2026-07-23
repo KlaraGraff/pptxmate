@@ -8,8 +8,10 @@ import { createEditSlideXmlTool } from "./edit-slide-xml";
 import { createExecuteOfficeJsTool } from "./execute-office-js";
 import { listSlideShapesTool } from "./list-slide-shapes";
 import { listSlidesTool } from "./list-slides";
+import { patchSlideTextTool } from "./patch-slide-text";
 import { readSlideTextTool } from "./read-slide-text";
 import { readSlideTextsTool } from "./read-slide-texts";
+import { readSlideTranslatableTextsTool } from "./read-slide-translatable-texts";
 import { readSlidesTool } from "./read-slides";
 import { screenshotSlideTool } from "./screenshot-slide";
 import { updateSlideTextTool } from "./update-slide-text";
@@ -26,11 +28,13 @@ export function createPptTools(ctx: AgentContext) {
     screenshotSlideTool,
     listSlideShapesTool,
     readSlideTextsTool,
+    readSlideTranslatableTextsTool,
     readSlideTextTool,
     verifySlidesTool,
     // PPT write tools
     createExecuteOfficeJsTool(ctx),
     editSlideTextTool,
+    patchSlideTextTool,
     updateSlideTextTool,
     createEditSlideXmlTool(ctx),
     createEditSlideChartTool(ctx),
@@ -50,9 +54,11 @@ export {
   editSlideTextTool,
   listSlidesTool,
   listSlideShapesTool,
+  patchSlideTextTool,
   readSlidesTool,
   readSlideTextTool,
   readSlideTextsTool,
+  readSlideTranslatableTextsTool,
   screenshotSlideTool,
   updateSlideTextTool,
   verifySlidesTool,

@@ -45,6 +45,12 @@ describe("PowerPoint recovery routing", () => {
       effect: "read",
       verificationKinds: ["text"],
     });
+    expect(
+      getPowerPointToolRecoveryInfo("read_slide_translatable_texts", {}),
+    ).toMatchObject({ effect: "read", verificationKinds: ["text"] });
+    expect(getPowerPointToolRecoveryInfo("patch_slide_text", {})).toMatchObject(
+      { effect: "write", mutationKind: "text" },
+    );
     expect(getPowerPointToolRecoveryInfo("verify_slides", {})).toMatchObject({
       verificationKinds: ["layout"],
     });
